@@ -4,8 +4,8 @@
 
     <PropertyGroup>
         <TargetFramework>net48</TargetFramework>
-        <AssemblyName>RimSynapseNvidiaTool</AssemblyName>
-        <RootNamespace>RimSynapse.NvidiaTool</RootNamespace>
+        <AssemblyName>NvidiaGpuMonitor</AssemblyName>
+        <RootNamespace>NvidiaGpuMonitor</RootNamespace>
         <LangVersion>9.0</LangVersion>
         <GenerateAssemblyInfo>false</GenerateAssemblyInfo>
         <AppendTargetFrameworkToOutputPath>false</AppendTargetFrameworkToOutputPath>
@@ -39,12 +39,7 @@
             <HintPath>$(HarmonyPath)\0Harmony.dll</HintPath>
             <Private>false</Private>
         </Reference>
-        <!-- RimSynapse Core — local build reference -->
-        <Reference Include="RimSynapseCore">
-            <HintPath>$(RimSynapseCoreAssembly)\RimSynapseCore.dll</HintPath>
-            <Private>false</Private>
-        </Reference>
-        <!-- System.Net.Http for potential future HTTP-based GPU queries -->
+        <!-- System.Net.Http — used by the optional LM Studio HTTP probe -->
         <Reference Include="System.Net.Http" />
     </ItemGroup>
 

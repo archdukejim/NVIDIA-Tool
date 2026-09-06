@@ -1,6 +1,6 @@
 using UnityEngine;
 
-namespace RimSynapse.NvidiaTool
+namespace NvidiaGpuMonitor
 {
     /// <summary>
     /// Drawing helper methods for the GPU overlay HUD:
@@ -183,7 +183,7 @@ namespace RimSynapse.NvidiaTool
     {
         Off,
         Basic,
-        Advanced,
+        LmStudio,
         Developer,
     }
 }

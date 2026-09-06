@@ -1,11 +1,12 @@
 using UnityEngine;
 using Verse;
 
-namespace RimSynapse.NvidiaTool
+namespace NvidiaGpuMonitor
 {
     /// <summary>
-    /// Mod entry point for RimSynapse NVIDIA Tool.
-    /// Registers with Core, starts GPU polling, and manages the overlay HUD.
+    /// Mod entry point for NVIDIA GPU Monitor.
+    /// Starts GPU polling, the optional LM Studio probe, and manages the overlay HUD.
+    /// Fully standalone — no dependency on any other mod.
     /// </summary>
     public class DevToolsMod : Mod
     {
@@ -13,7 +14,6 @@ namespace RimSynapse.NvidiaTool
 
         public DevToolsSettings Settings { get; private set; }
 
-        private SynapseModHandle _handle;
         private DevToolsWindow _window;
 
         public DevToolsMod(ModContentPack content) : base(content)
@@ -23,26 +23,22 @@ namespace RimSynapse.NvidiaTool
             // Load persistent settings
             Settings = GetSettings<DevToolsSettings>();
 
-            // Register with Core (no system prompt — this mod doesn't make LLM calls)
-            _handle = SynapseCore.Register(
-                "rimsynapse.nvtool",
-                "RimSynapse NVIDIA Tool");
-
-            // Start GPU polling
+            // Start GPU polling and the optional LM Studio probe
             NvidiaSmiReader.Start();
+            LmStudioProbe.Start();
 
-            RimSynapse.SynapseLogger.Message("[RimSynapse NV] RimSynapse NVIDIA Tool loaded.");
+            Log.Message("[NVIDIA Monitor] NVIDIA GPU Monitor loaded.");
         }
 
-        public override string SettingsCategory() => "RimSynapse NVIDIA Tool";
+        public override string SettingsCategory() => "NVIDIA GPU Monitor";
 
         public override void DoSettingsWindowContents(Rect inRect)
         {
             var listing = new Listing_Standard();
             listing.Begin(inRect);
 
-            listing.Label("RimSynapse NVIDIA Tool",
-                tooltip: "GPU monitoring and performance dashboard.");
+            listing.Label("NVIDIA GPU Monitor",
+                tooltip: "GPU monitoring and hardware dashboard.");
             listing.GapLine();
 
             // ── Overlay controls ──
@@ -53,7 +49,7 @@ namespace RimSynapse.NvidiaTool
             switch (OverlayHud.CurrentMode)
             {
                 case OverlayMode.Basic: modeText = "Basic"; break;
-                case OverlayMode.Advanced: modeText = "Advanced"; break;
+                case OverlayMode.LmStudio: modeText = "LM Studio"; break;
                 case OverlayMode.Developer: modeText = "Developer"; break;
                 default: modeText = "Off"; break;
             }
@@ -67,7 +63,7 @@ namespace RimSynapse.NvidiaTool
             var prev1 = GUI.color;
             GUI.color = new Color(0.6f, 0.6f, 0.6f);
             listing.Label("  Basic: VRAM breakdown (System, RimWorld, LM Studio)");
-            listing.Label("  Advanced: + Model, tokens/s, API calls, throttle");
+            listing.Label("  LM Studio: + loaded model and estimated VRAM (opt-in below)");
             listing.Label("  Developer: + GPU temp, power, clocks, fan, utilization");
             listing.Label("  Click the mode label on the overlay to cycle.");
             listing.Label("  Drag the overlay header to reposition.");
@@ -92,6 +88,43 @@ namespace RimSynapse.NvidiaTool
             listing.Label("  Checked (default): VRAM status every colony load");
             listing.Label("  Unchecked: only warns when < 3 GB free");
             GUI.color = prev2;
+
+            listing.Gap(12f);
+            listing.GapLine();
+
+            // ── LM Studio awareness (optional) ──
+            listing.Label("Local LLM (LM Studio) — optional");
+            listing.Gap(4f);
+
+            listing.CheckboxLabeled(
+                "Monitor a local LM Studio model",
+                ref Settings.lmStudioEnabled,
+                "Off by default. When enabled, the tool reads the loaded model from your\n" +
+                "LM Studio endpoint and estimates its VRAM. Works with RimTalk, RimSynapse,\n" +
+                "or any setup running LM Studio — no other mod required.");
+
+            if (Settings.lmStudioEnabled)
+            {
+                listing.Gap(4f);
+                listing.Label("  Endpoint:");
+                Settings.lmStudioEndpoint = listing.TextEntry(Settings.lmStudioEndpoint);
+
+                listing.Gap(4f);
+                var prevLm = GUI.color;
+                if (LmStudioProbe.Reachable)
+                {
+                    GUI.color = new Color(0.35f, 0.85f, 0.35f);
+                    string tag = LmStudioProbe.IsRemote ? " (remote — not counted as local VRAM)" : "";
+                    listing.Label($"  ✓ Connected — model: {LmStudioProbe.ModelName}{tag}");
+                }
+                else
+                {
+                    GUI.color = new Color(0.9f, 0.6f, 0.2f);
+                    listing.Label("  … not reachable yet " +
+                        (string.IsNullOrEmpty(LmStudioProbe.LastError) ? "" : $"({LmStudioProbe.LastError})"));
+                }
+                GUI.color = prevLm;
+            }
 
             listing.Gap(12f);
             listing.GapLine();
@@ -151,26 +184,11 @@ namespace RimSynapse.NvidiaTool
                 }
             }
 
-            listing.Gap(12f);
-            listing.GapLine();
-
-            // ── Request metrics ──
-            listing.Label("Request Metrics");
-            listing.Gap(4f);
-            listing.Label($"  Session Requests: {RequestMetrics.TotalRequests}" +
-                          $" ({RequestMetrics.FailedRequests} failed)");
-            listing.Label($"  Avg Response: {RequestMetrics.AvgDurationMs:F0} ms");
-            listing.Label($"  Avg Prompt Tokens: {RequestMetrics.AvgPromptTokens:F0}");
-            listing.Label($"  Avg Completion Tokens: {RequestMetrics.AvgCompletionTokens:F0}");
-            listing.Label($"  Tokens/sec: {RequestMetrics.TokensPerSecond:F1}");
-            listing.Label($"  Requests/min: {RequestMetrics.RequestsPerMinute:F1}");
-            listing.Label($"  Throttled: {RequestMetrics.ThrottledPercent:F1}%");
-
             listing.End();
         }
 
         /// <summary>
-        /// Open or focus the DevTools full dashboard window.
+        /// Open or focus the full dashboard window.
         /// </summary>
         public void OpenDashboard()
         {
@@ -195,7 +213,7 @@ namespace RimSynapse.NvidiaTool
         {
             // Overlay starts off — toolbar toggle icon lets users enable it
             OverlayHud.SetMode(OverlayMode.Off);
-            RimSynapse.SynapseLogger.Message("[RimSynapse NV] DevTools ready. Use toolbar icon to toggle GPU overlay.");
+            Log.Message("[NVIDIA Monitor] Ready. Use the toolbar icon to toggle the GPU overlay.");
         }
     }
 }

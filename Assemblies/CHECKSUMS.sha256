@@ -1,5 +1,5 @@
-# RimSynapse NVIDIA-Tool — shipped assembly manifest
-# version: 0.8.0
-# commit:  f136a91
-# format:  sha256sum — verify with 'verify-binaries.ps1' or 'sha256sum -c'
-c25a6cc8ecb4c704fe2c6695c796fe69b305e18a1c58c4bf2e2eae671d8856a3  RimSynapseNvidiaTool.dll
+# NVIDIA GPU Monitor — shipped assembly manifest
+# version: 1.0.0
+# commit:  (pending — regenerated at release)
+# format:  sha256sum — verify with 'sha256sum -c'
+9d8e28ee875ccec3c08505b7138f274ea74cd9194ff2590052a3d156445f5fe1  NvidiaGpuMonitor.dll

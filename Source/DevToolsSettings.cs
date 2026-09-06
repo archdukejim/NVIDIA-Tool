@@ -1,9 +1,9 @@
 using Verse;
 
-namespace RimSynapse.NvidiaTool
+namespace NvidiaGpuMonitor
 {
     /// <summary>
-    /// Persistent settings for the NVIDIA Tool mod.
+    /// Persistent settings for NVIDIA GPU Monitor.
     /// Saved to the RimWorld config folder automatically.
     /// </summary>
     public class DevToolsSettings : ModSettings
@@ -14,9 +14,20 @@ namespace RimSynapse.NvidiaTool
         /// </summary>
         public bool alwaysNotifyVram = true;
 
+        /// <summary>
+        /// Opt-in: talk to a local/remote LM Studio (OpenAI-compatible) endpoint to show
+        /// the loaded model and estimate its VRAM footprint. Off by default.
+        /// </summary>
+        public bool lmStudioEnabled = false;
+
+        /// <summary>LM Studio endpoint used when <see cref="lmStudioEnabled"/> is set.</summary>
+        public string lmStudioEndpoint = "http://localhost:1234";
+
         public override void ExposeData()
         {
-            Scribe_Values.Look(ref alwaysNotifyVram, "alwaysNotifyVram", false);
+            Scribe_Values.Look(ref alwaysNotifyVram, "alwaysNotifyVram", true);
+            Scribe_Values.Look(ref lmStudioEnabled, "lmStudioEnabled", false);
+            Scribe_Values.Look(ref lmStudioEndpoint, "lmStudioEndpoint", "http://localhost:1234");
             base.ExposeData();
         }
     }
