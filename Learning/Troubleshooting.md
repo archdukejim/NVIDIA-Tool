@@ -38,7 +38,8 @@ In rough order of likelihood:
 
 The LM Studio feature is **optional and off by default**. If you enabled it:
 
-- Check the **endpoint** in mod settings (default `http://localhost:1234`) matches where LM Studio is serving.
+- Check the **endpoint** in mod settings (default `http://127.0.0.1:1234`) matches where LM Studio is serving.
+- **On Windows, use `127.0.0.1` rather than `localhost`.** Windows often resolves `localhost` to IPv6 (`::1`) first, but LM Studio binds to IPv4 (`127.0.0.1`) only, so a `localhost` endpoint can fail to connect. The tool auto-retries `localhost` against `127.0.0.1`, but setting `127.0.0.1` directly avoids the problem entirely.
 - Make sure a model is actually loaded in LM Studio and its server is running.
 - A **remote** endpoint (not localhost) is detected and shown as remote; its memory is intentionally not counted against your local GPU.
 

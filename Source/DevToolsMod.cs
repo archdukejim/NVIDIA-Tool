@@ -109,6 +109,11 @@ namespace NvidiaGpuMonitor
                 listing.Label("  Endpoint:");
                 Settings.lmStudioEndpoint = listing.TextEntry(Settings.lmStudioEndpoint);
 
+                var prevHint = GUI.color;
+                GUI.color = new Color(0.6f, 0.6f, 0.6f);
+                listing.Label("  Tip: on Windows, prefer 127.0.0.1 over localhost — LM Studio binds IPv4.");
+                GUI.color = prevHint;
+
                 listing.Gap(4f);
                 var prevLm = GUI.color;
                 if (LmStudioProbe.Reachable)

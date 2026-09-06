@@ -21,13 +21,13 @@ namespace NvidiaGpuMonitor
         public bool lmStudioEnabled = false;
 
         /// <summary>LM Studio endpoint used when <see cref="lmStudioEnabled"/> is set.</summary>
-        public string lmStudioEndpoint = "http://localhost:1234";
+        public string lmStudioEndpoint = "http://127.0.0.1:1234";
 
         public override void ExposeData()
         {
             Scribe_Values.Look(ref alwaysNotifyVram, "alwaysNotifyVram", true);
             Scribe_Values.Look(ref lmStudioEnabled, "lmStudioEnabled", false);
-            Scribe_Values.Look(ref lmStudioEndpoint, "lmStudioEndpoint", "http://localhost:1234");
+            Scribe_Values.Look(ref lmStudioEndpoint, "lmStudioEndpoint", "http://127.0.0.1:1234");
             base.ExposeData();
         }
     }

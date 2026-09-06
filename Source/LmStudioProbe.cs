@@ -45,7 +45,7 @@ namespace NvidiaGpuMonitor
 
         /// <summary>The configured endpoint, e.g. "http://localhost:1234".</summary>
         internal static string Endpoint =>
-            DevToolsMod.Instance?.Settings?.lmStudioEndpoint ?? "http://localhost:1234";
+            DevToolsMod.Instance?.Settings?.lmStudioEndpoint ?? "http://127.0.0.1:1234";
 
         /// <summary>True when the endpoint answered on the last check.</summary>
         internal static bool Reachable { get { lock (_lock) return _reachable; } }
@@ -145,8 +145,29 @@ namespace NvidiaGpuMonitor
         /// <summary>
         /// GET {endpoint}/v1/models and extract the first model id. Returns null on any
         /// failure. Uses a short timeout so the background loop never hangs.
+        ///
+        /// Windows gotcha: "localhost" frequently resolves to IPv6 (::1) first, but LM Studio
+        /// binds to IPv4 (127.0.0.1) only, so a "localhost" endpoint fails to connect. When the
+        /// configured host is "localhost" and the request fails, we transparently retry against
+        /// 127.0.0.1 so the user doesn't have to know this.
         /// </summary>
         private static string QueryLoadedModel(string endpoint, out string error)
+        {
+            string model = TryFetchModel(endpoint, out error);
+            if (model != null) return model;
+
+            string ipv4 = SubstituteLocalhostForIpv4(endpoint);
+            if (ipv4 != null)
+            {
+                string retryModel = TryFetchModel(ipv4, out string retryError);
+                if (retryModel != null) { error = null; return retryModel; }
+                // Keep the original error unless the retry produced a more specific one.
+                if (string.IsNullOrEmpty(error)) error = retryError;
+            }
+            return null;
+        }
+
+        private static string TryFetchModel(string endpoint, out string error)
         {
             error = null;
             try
@@ -176,6 +197,26 @@ namespace NvidiaGpuMonitor
             catch (Exception ex)
             {
                 error = ex.Message;
+                return null;
+            }
+        }
+
+        /// <summary>
+        /// If the endpoint's host is "localhost", return the same endpoint with the host
+        /// rewritten to 127.0.0.1 (forcing IPv4); otherwise null.
+        /// </summary>
+        private static string SubstituteLocalhostForIpv4(string endpoint)
+        {
+            try
+            {
+                var uri = new Uri(endpoint);
+                if (!string.Equals(uri.Host, "localhost", StringComparison.OrdinalIgnoreCase))
+                    return null;
+                var builder = new UriBuilder(uri) { Host = "127.0.0.1" };
+                return builder.Uri.ToString();
+            }
+            catch
+            {
                 return null;
             }
         }
