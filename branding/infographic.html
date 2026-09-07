@@ -1,0 +1,238 @@
+<title>GPU Monitor for NVIDIA GPUs</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Chakra+Petch:wght@500;600;700&family=IBM+Plex+Mono:wght@500;600&family=IBM+Plex+Sans:wght@400;500;600&display=swap">
+<style>
+  /* Committed single visual world: an in-game telemetry HUD, painted explicitly. */
+  :root{
+    --ground:#080d16; --ground2:#0b1322; --surface:#101e30; --surface2:#152941;
+    --line:#233A54; --line-soft:#1b2c43;
+    --ink:#eef4fb; --muted:#9fb3c8; --faint:#6d8299;
+    --teal:#2dd4bf; --teal2:#7defd9; --amber:#f6b53c; --danger:#ef6f5c; --rim:#3b82f6;
+    --sys:#3a5877;
+    --shadow:0 18px 50px -24px rgba(0,0,0,.8);
+    --fsans:"IBM Plex Sans",system-ui,sans-serif;
+    --fdisp:"Chakra Petch","IBM Plex Sans",system-ui,sans-serif;
+    --fmono:"IBM Plex Mono",ui-monospace,monospace;
+  }
+  *{box-sizing:border-box}
+  body{
+    margin:0; background:
+      radial-gradient(1200px 600px at 15% -5%, #12233a 0%, transparent 60%),
+      radial-gradient(900px 500px at 110% 10%, #10261f 0%, transparent 55%),
+      var(--ground);
+    color:var(--ink); font-family:var(--fsans); line-height:1.55;
+    -webkit-font-smoothing:antialiased;
+  }
+  .wrap{max-width:1020px; margin:0 auto; padding:40px 24px 64px}
+  a{color:var(--teal2); text-decoration:none}
+  a:hover{text-decoration:underline}
+  a:focus-visible,button:focus-visible{outline:2px solid var(--teal); outline-offset:3px; border-radius:6px}
+
+  .eyebrow{font-family:var(--fmono); font-size:12px; letter-spacing:.22em; text-transform:uppercase; color:var(--teal)}
+  h1,h2,h3{font-family:var(--fdisp); text-wrap:balance; margin:0}
+
+  /* ── Hero ── */
+  .hero{display:grid; grid-template-columns:auto 1fr; gap:26px; align-items:center; margin-bottom:14px}
+  .badge{width:104px; height:104px; filter:drop-shadow(0 10px 24px rgba(45,212,191,.18))}
+  .hero h1{font-size:clamp(34px,6vw,58px); font-weight:700; letter-spacing:.5px; line-height:1.02}
+  .hero h1 .for{display:block; font-size:.52em; font-weight:600; color:var(--teal); letter-spacing:2px; margin-top:6px}
+  .tagline{color:var(--muted); font-size:clamp(15px,2.4vw,19px); margin-top:10px; max-width:52ch}
+  .status{display:flex; flex-wrap:wrap; gap:8px; margin-top:16px; font-family:var(--fmono); font-size:12.5px}
+  .chip{display:inline-flex; align-items:center; gap:7px; padding:6px 12px; border:1px solid var(--line);
+        border-radius:999px; background:rgba(21,41,65,.5); color:var(--muted)}
+  .dot{width:8px; height:8px; border-radius:50%; background:var(--teal); box-shadow:0 0 0 0 rgba(45,212,191,.6)}
+  @media (prefers-reduced-motion:no-preference){ .dot{animation:pulse 2.4s ease-out infinite} }
+  @keyframes pulse{0%{box-shadow:0 0 0 0 rgba(45,212,191,.55)}70%{box-shadow:0 0 0 9px rgba(45,212,191,0)}100%{box-shadow:0 0 0 0 rgba(45,212,191,0)}}
+
+  /* ── Panel base ── */
+  .panel{background:linear-gradient(180deg,var(--surface),var(--ground2)); border:1px solid var(--line);
+         border-radius:16px; box-shadow:var(--shadow)}
+
+  /* ── VRAM meter (the thesis) ── */
+  .meter{padding:22px 24px 26px; margin:26px 0 40px}
+  .meter-head{display:flex; justify-content:space-between; align-items:baseline; gap:16px; flex-wrap:wrap; margin-bottom:14px}
+  .meter-head .t{font-family:var(--fdisp); font-weight:600; font-size:15px; letter-spacing:.5px}
+  .meter-head .r{font-family:var(--fmono); font-size:13px; color:var(--faint)}
+  .meter-head .r b{color:var(--ink); font-weight:600}
+  .bar{position:relative; height:56px; border-radius:9px; overflow:hidden; display:flex;
+       border:1px solid var(--line-soft); background:#0a1421}
+  .seg{height:100%; transform-origin:left center; position:relative}
+  @media (prefers-reduced-motion:no-preference){ .seg{animation:grow .9s cubic-bezier(.2,.7,.2,1) both} }
+  @keyframes grow{from{transform:scaleX(0)}to{transform:scaleX(1)}}
+  .s-sys{background:var(--sys)}
+  .s-rim{background:linear-gradient(180deg,#4a90f6,#2f6fd6)}
+  .s-mod{background:linear-gradient(180deg,#33e6cf,#1eb6a2)}
+  .s-free{background:repeating-linear-gradient(135deg,#12233a 0 8px,#0e1c30 8px 16px)}
+  .spill{position:absolute; top:-6px; bottom:-6px; width:2px; background:var(--danger);
+         left:76%; box-shadow:0 0 10px var(--danger)}
+  .spill span{position:absolute; top:-20px; left:50%; transform:translateX(-50%); white-space:nowrap;
+              font-family:var(--fmono); font-size:10.5px; letter-spacing:.05em; color:var(--danger)}
+  .legend{display:grid; grid-template-columns:repeat(4,1fr); gap:10px 16px; margin-top:16px}
+  .legend div{display:flex; flex-direction:column; gap:2px}
+  .legend .k{display:flex; align-items:center; gap:8px; font-size:13px; color:var(--muted)}
+  .legend .sw{width:11px; height:11px; border-radius:3px; flex:none}
+  .legend .v{font-family:var(--fmono); font-size:16px; color:var(--ink); font-weight:600; margin-left:19px}
+  .legend .u{font-size:11px; color:var(--faint); font-weight:500}
+  .caption{font-family:var(--fmono); font-size:11.5px; color:var(--faint); margin-top:14px; letter-spacing:.03em}
+
+  /* ── Prose thesis ── */
+  .thesis{margin:0 0 40px}
+  .thesis h2{font-size:clamp(22px,3.6vw,30px); font-weight:700; letter-spacing:.4px; margin:10px 0 12px}
+  .thesis p{color:var(--muted); font-size:17px; max-width:66ch; margin:0}
+  .thesis .k{color:var(--teal2); font-weight:600}
+  .thesis .bad{color:var(--danger); font-weight:600}
+
+  /* ── Feature grid ── */
+  .grid{display:grid; grid-template-columns:repeat(2,1fr); gap:16px; margin-bottom:44px}
+  .feat{padding:20px 22px; position:relative; overflow:hidden}
+  .feat::before{content:""; position:absolute; left:0; top:18px; bottom:18px; width:4px; border-radius:0 4px 4px 0;
+                background:linear-gradient(180deg,var(--teal),var(--teal2))}
+  .feat h3{font-size:18.5px; font-weight:600; letter-spacing:.3px; margin:0 0 6px; padding-left:6px}
+  .feat p{margin:0; padding-left:6px; color:var(--muted); font-size:14.5px}
+  .feat .tag{font-family:var(--fmono); font-size:11px; color:var(--faint); padding-left:6px; letter-spacing:.05em}
+
+  /* ── Why ── */
+  .why{margin-bottom:44px}
+  .why h2{font-size:clamp(22px,3.6vw,30px); font-weight:700; letter-spacing:.4px; margin:0 0 20px}
+  .why ul{list-style:none; margin:0; padding:0; display:grid; gap:16px}
+  .why li{display:grid; grid-template-columns:auto 1fr; gap:16px; align-items:start}
+  .why .mark{font-family:var(--fmono); font-size:13px; color:var(--teal); border:1px solid var(--line);
+             border-radius:8px; padding:4px 9px; background:rgba(21,41,65,.4); white-space:nowrap; margin-top:2px}
+  .why b{color:var(--ink); font-weight:600}
+  .why p{margin:0; color:var(--muted); font-size:16px; max-width:70ch}
+
+  /* ── Spec strip ── */
+  .specs{display:grid; grid-template-columns:repeat(4,1fr); gap:1px; background:var(--line);
+         border:1px solid var(--line); border-radius:14px; overflow:hidden; margin-bottom:40px}
+  .specs div{background:var(--ground2); padding:18px 18px}
+  .specs .n{font-family:var(--fmono); font-size:12px; color:var(--teal); letter-spacing:.06em; text-transform:uppercase}
+  .specs .d{margin-top:6px; font-size:14px; color:var(--muted)}
+  .specs .d b{color:var(--ink); font-weight:600}
+
+  /* ── Footer ── */
+  .foot{border-top:1px solid var(--line); padding-top:26px; display:grid; gap:18px}
+  .cta{display:flex; flex-wrap:wrap; gap:12px}
+  .btn{font-family:var(--fdisp); font-weight:600; letter-spacing:.4px; font-size:14.5px; padding:11px 20px;
+       border-radius:10px; border:1px solid var(--teal); color:#062b26; background:linear-gradient(180deg,var(--teal2),var(--teal))}
+  .btn.ghost{background:transparent; color:var(--teal2)}
+  .legal{font-size:12.5px; color:var(--faint); max-width:80ch}
+  .legal b{color:var(--muted); font-weight:600}
+  @media (max-width:720px){
+    .hero{grid-template-columns:1fr} .badge{width:84px;height:84px}
+    .grid,.legend,.specs{grid-template-columns:1fr}
+    .legend{grid-template-columns:repeat(2,1fr)}
+  }
+</style>
+
+<div class="wrap">
+
+  <header class="hero">
+    <svg class="badge" viewBox="0 0 512 512" role="img" aria-label="GPU card emblem" xmlns="http://www.w3.org/2000/svg">
+      <defs>
+        <linearGradient id="bg" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#132033"/><stop offset="1" stop-color="#0a0f1a"/></linearGradient>
+        <linearGradient id="bd" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#1c3352"/><stop offset="1" stop-color="#15263e"/></linearGradient>
+        <linearGradient id="br" x1="0" y1="1" x2="0" y2="0"><stop offset="0" stop-color="#2dd4bf"/><stop offset="1" stop-color="#5eead4"/></linearGradient>
+      </defs>
+      <rect x="16" y="16" width="480" height="480" rx="96" fill="url(#bg)"/>
+      <rect x="16.5" y="16.5" width="479" height="479" rx="95.5" fill="none" stroke="#2dd4bf" stroke-opacity=".35" stroke-width="3"/>
+      <rect x="86" y="150" width="340" height="212" rx="26" fill="url(#bd)" stroke="#2dd4bf" stroke-opacity=".55" stroke-width="4"/>
+      <rect x="76" y="176" width="18" height="70" rx="6" fill="#20374f"/>
+      <g fill="#f6b53c" opacity=".9"><rect x="120" y="362" width="26" height="20"/><rect x="156" y="362" width="26" height="20"/><rect x="192" y="362" width="40" height="20"/><rect x="242" y="362" width="26" height="20"/></g>
+      <g transform="translate(186 256)">
+        <circle r="70" fill="#0e1c2e" stroke="#2dd4bf" stroke-opacity=".5" stroke-width="4"/>
+        <g fill="#2dd4bf" opacity=".85">
+          <path d="M0 0 C 30 -10 52 -6 60 14 C 34 10 14 8 0 0 Z"/>
+          <path d="M0 0 C 30 -10 52 -6 60 14 C 34 10 14 8 0 0 Z" transform="rotate(72)"/>
+          <path d="M0 0 C 30 -10 52 -6 60 14 C 34 10 14 8 0 0 Z" transform="rotate(144)"/>
+          <path d="M0 0 C 30 -10 52 -6 60 14 C 34 10 14 8 0 0 Z" transform="rotate(216)"/>
+          <path d="M0 0 C 30 -10 52 -6 60 14 C 34 10 14 8 0 0 Z" transform="rotate(288)"/>
+        </g>
+        <circle r="16" fill="#15263e" stroke="#5eead4" stroke-width="3"/>
+      </g>
+      <g transform="translate(300 236)">
+        <rect x="0" y="72" width="22" height="42" rx="4" fill="url(#br)"/>
+        <rect x="30" y="44" width="22" height="70" rx="4" fill="url(#br)"/>
+        <rect x="60" y="16" width="22" height="98" rx="4" fill="url(#br)"/>
+        <path d="M-6 8 L 18 8 L 30 -18 L 46 26 L 58 8 L 92 8" fill="none" stroke="#f6b53c" stroke-width="5" stroke-linejoin="round" stroke-linecap="round"/>
+      </g>
+    </svg>
+    <div>
+      <p class="eyebrow">RimWorld mod · standalone</p>
+      <h1>GPU Monitor<span class="for">for NVIDIA GPUs</span></h1>
+      <p class="tagline">See your VRAM before it runs out — a live GPU and VRAM readout rendered right inside RimWorld, built for players running a local language model alongside the game.</p>
+      <div class="status">
+        <span class="chip"><span class="dot"></span>reads NVML</span>
+        <span class="chip">requires only Harmony</span>
+        <span class="chip">zero save-file footprint</span>
+      </div>
+    </div>
+  </header>
+
+  <!-- The thesis: one shared VRAM pool -->
+  <section class="meter panel" aria-label="Example VRAM readout">
+    <div class="meter-head">
+      <span class="t">VRAM READOUT</span>
+      <span class="r">example · RTX 4070 · <b>9.1</b> / 12.0 GB used</span>
+    </div>
+    <div class="bar">
+      <div class="seg s-sys"  style="width:14%"></div>
+      <div class="seg s-rim"  style="width:20%; animation-delay:.08s"></div>
+      <div class="seg s-mod"  style="width:42%; animation-delay:.16s"></div>
+      <div class="seg s-free" style="width:24%; animation-delay:.24s"></div>
+      <div class="spill"><span>spill&nbsp;risk</span></div>
+    </div>
+    <div class="legend">
+      <div><span class="k"><span class="sw" style="background:var(--sys)"></span>System</span><span class="v">1.7<span class="u"> GB</span></span></div>
+      <div><span class="k"><span class="sw" style="background:#3b82f6"></span>RimWorld</span><span class="v">2.4<span class="u"> GB</span></span></div>
+      <div><span class="k"><span class="sw" style="background:var(--teal)"></span>LM Studio model</span><span class="v">5.0<span class="u"> GB</span></span></div>
+      <div><span class="k"><span class="sw" style="background:#16273c;border:1px solid var(--line)"></span>Free</span><span class="v">2.9<span class="u"> GB</span></span></div>
+    </div>
+    <p class="caption">// total is measured from NVML · the split is estimated · a remote model reads 0 GB local</p>
+  </section>
+
+  <section class="thesis">
+    <p class="eyebrow">One GPU, two jobs</p>
+    <h2>Your graphics card is drawing the game <em>and</em> hosting the model.</h2>
+    <p>RimWorld renders the colony while a local LLM answers in the background — and both live in the <span class="k">same pool of VRAM</span>. When the model no longer fits, it <span class="bad">spills into system RAM</span> and inference slows by an order of magnitude. This tool makes that budget visible, in-game, before it bites.</p>
+  </section>
+
+  <!-- What it shows -->
+  <p class="eyebrow" style="margin-bottom:16px">What it shows</p>
+  <section class="grid">
+    <article class="feat panel"><h3>Live telemetry</h3><p>VRAM, temperature, utilization, power draw, clocks and fan — read directly from NVIDIA's NVML library. No process spawning; Workshop-safe.</p></article>
+    <article class="feat panel"><h3>VRAM breakdown</h3><p>The measured total, split into System / desktop, RimWorld's own textures, and (optionally) your local model — so you see exactly where memory went.</p></article>
+    <article class="feat panel"><h3>On-load advisory</h3><p>A heads-up when a colony loads and you're near the ceiling — with practical suggestions before a raid or late-game turns into a stutter.</p></article>
+    <article class="feat panel"><h3>Overlay + dashboard</h3><p>A draggable on-screen HUD you cycle <span class="tag">Off → Basic → LM&nbsp;Studio → Developer</span>, plus a full stats window from the toolbar.</p></article>
+    <article class="feat panel"><h3>Optional LM Studio</h3><p>Point it at an OpenAI-compatible endpoint and it reads the loaded model, estimating its footprint at ~0.65 GB per billion params (Q4-class).</p></article>
+    <article class="feat panel"><h3>Remote-aware</h3><p>Running the model on another machine? The remote host is detected and its memory is never charged against your local GPU.</p></article>
+  </section>
+
+  <!-- Why -->
+  <section class="why">
+    <h2>Why it helps the local-AI community</h2>
+    <ul>
+      <li><span class="mark">shared</span><p><b>RimWorld now hosts local LLMs</b> — RimTalk, the RimSynapse suite, and more. The game and the model compete for one pool of VRAM, and most players never see that number.</p></li>
+      <li><span class="mark">the&nbsp;wall</span><p><b>Running out of VRAM is the #1 failure.</b> The model spills to system RAM and tokens-per-second collapse — the classic "it worked, then got slow" that's really a memory problem.</p></li>
+      <li><span class="mark">right-size</span><p><b>Real numbers, not guesswork.</b> Seeing the split lets you right-size the model and context window on purpose instead of trial-and-error until something breaks.</p></li>
+      <li><span class="mark">any&nbsp;stack</span><p><b>Not tied to one mod.</b> It works with any local LLM served over an OpenAI-compatible endpoint, and needs no companion — a general utility for the on-device-AI crowd who happen to also play RimWorld.</p></li>
+    </ul>
+  </section>
+
+  <!-- Specs -->
+  <section class="specs">
+    <div><div class="n">Source</div><div class="d"><b>NVML</b> P/Invoke — native, no shell</div></div>
+    <div><div class="n">Depends on</div><div class="d"><b>Harmony</b> only — fully standalone</div></div>
+    <div><div class="n">Save impact</div><div class="d"><b>None</b> — add or remove anytime</div></div>
+    <div><div class="n">Hardware</div><div class="d"><b>NVIDIA</b> GPU; quiet otherwise</div></div>
+  </section>
+
+  <footer class="foot">
+    <div class="cta">
+      <a class="btn" href="https://github.com/archdukejim/NVIDIA-Tool/releases/latest">Download</a>
+      <a class="btn ghost" href="https://github.com/archdukejim/NVIDIA-Tool">View on GitHub</a>
+    </div>
+    <p class="legal"><b>Independent, community-made mod.</b> Not affiliated with, endorsed by, or sponsored by NVIDIA Corporation. “NVIDIA” is a trademark of NVIDIA Corporation, used here only nominatively to describe the graphics hardware this tool is compatible with. RimWorld is a trademark of Ludeon Studios. All other trademarks are the property of their respective owners.</p>
+  </footer>
+
+</div>
