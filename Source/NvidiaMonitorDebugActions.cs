@@ -98,6 +98,23 @@ namespace NvidiaGpuMonitor
                 (string.IsNullOrEmpty(LmStudioProbe.LastError) ? "" : $", error={LmStudioProbe.LastError}"));
         }
 
+        /// <summary>Dump everything the receiver endpoint (GpuMonitorApi) currently holds —
+        /// proves the listener received reports from other mods (in-process or cross-assembly).</summary>
+        [DebugAction(Category, "Dump reported consumers", allowedGameStates = AllowedGameStates.Entry)]
+        public static void DumpReportedConsumers()
+        {
+            var all = GpuMonitorApi.AllSnapshot();
+            if (all.Count == 0)
+            {
+                Log.Message("[GPU Monitor] Listener holds 0 reported consumers.");
+                return;
+            }
+            var sb = new System.Text.StringBuilder($"[GPU Monitor] Listener holds {all.Count} reported consumer(s):\n");
+            foreach (var c in all)
+                sb.AppendLine($"  id={c.id}  label=\"{c.label}\"  {c.vramMb:F0} MB  resident={c.resident}");
+            Log.Message(sb.ToString().TrimEnd());
+        }
+
         private const string TestConsumerId = "gpumonitor.debug.testconsumer";
 
         /// <summary>Register a fake ~512 MB in-process consumer through the public receiver
