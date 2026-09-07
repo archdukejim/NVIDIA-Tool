@@ -27,17 +27,17 @@ namespace NvidiaGpuMonitor
             NvidiaSmiReader.Start();
             LmStudioProbe.Start();
 
-            Log.Message("[NVIDIA Monitor] NVIDIA GPU Monitor loaded.");
+            Log.Message("[GPU Monitor] GPU Monitor for NVIDIA loaded.");
         }
 
-        public override string SettingsCategory() => "NVIDIA GPU Monitor";
+        public override string SettingsCategory() => "GPU Monitor for NVIDIA";
 
         public override void DoSettingsWindowContents(Rect inRect)
         {
             var listing = new Listing_Standard();
             listing.Begin(inRect);
 
-            listing.Label("NVIDIA GPU Monitor",
+            listing.Label("GPU Monitor for NVIDIA",
                 tooltip: "GPU monitoring and hardware dashboard.");
             listing.GapLine();
 
@@ -218,7 +218,7 @@ namespace NvidiaGpuMonitor
         {
             // Overlay starts off — toolbar toggle icon lets users enable it
             OverlayHud.SetMode(OverlayMode.Off);
-            Log.Message("[NVIDIA Monitor] Ready. Use the toolbar icon to toggle the GPU overlay.");
+            Log.Message("[GPU Monitor] Ready. Use the toolbar icon to toggle the GPU overlay.");
         }
     }
 }

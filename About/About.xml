@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
 <ModMetaData>
-    <name>NVIDIA GPU Monitor</name>
+    <name>GPU Monitor for NVIDIA GPUs</name>
     <author>archdukejim</author>
     <packageId>GpuTools.NvidiaMonitor</packageId>
     <url>https://github.com/archdukejim/NVIDIA-Tool</url>
@@ -20,7 +20,7 @@
         <li>brrainz.harmony</li>
     </loadAfter>
     <description>
-NVIDIA GPU Monitor
+GPU Monitor for NVIDIA GPUs
 Official Wiki and Documentation: https://github.com/archdukejim/NVIDIA-Tool/wiki
 
 A standalone, in-game GPU toolkit for RimWorld. It renders your NVIDIA GPU's health, VRAM usage, and hardware telemetry directly inside RimWorld's UI — no external programs or overlays needed.
@@ -35,7 +35,7 @@ This is a general-purpose tool. It has no dependency on any other mod. It is esp
 - Developer Tools Window: A dashboard with GPU hardware stats and, when enabled, LM Studio status.
 
 --- Optional: Local LLM (LM Studio) Awareness ---
-- Off by default. Enable it in mod settings and point it at your LM Studio endpoint (default http://localhost:1234).
+- Off by default. Enable it in mod settings and point it at your LM Studio endpoint (default http://127.0.0.1:1234).
 - When enabled and reachable, the tool reads the loaded model name directly from LM Studio's own HTTP API and estimates its VRAM footprint from the parameter count. A remote LM Studio host is detected and never counted against local VRAM.
 - This does NOT require RimSynapse, RimTalk, or any other mod — it talks to LM Studio directly.
 
@@ -58,6 +58,9 @@ This is a general-purpose tool. It has no dependency on any other mod. It is esp
 
 --- Note ---
 This tool is optional and purely diagnostic. It does not affect gameplay.
+
+--- Trademark ---
+This is an independent, community-made mod. It is NOT affiliated with, endorsed by, sponsored by, or associated with NVIDIA Corporation. "NVIDIA" is a trademark of NVIDIA Corporation, used here only nominatively to describe the graphics hardware this tool is compatible with. All other trademarks are the property of their respective owners.
 
 --- Support the Project ---
 Buy me a coffee: https://buymeacoffee.com/archdukejim

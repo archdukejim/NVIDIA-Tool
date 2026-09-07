@@ -4,7 +4,7 @@
   Interoperable with the community "Version Checker" mod. Standalone: no Core dependency.
 -->
 <Manifest>
-  <identifier>NVIDIA GPU Monitor</identifier>
+  <identifier>GPU Monitor for NVIDIA GPUs</identifier>
   <version>1.0.0</version>
   <manifestUri>https://raw.githubusercontent.com/archdukejim/NVIDIA-Tool/main/About/Manifest.xml</manifestUri>
   <downloadUri>https://github.com/archdukejim/NVIDIA-Tool/releases/latest</downloadUri>

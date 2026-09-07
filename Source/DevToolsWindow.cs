@@ -55,7 +55,7 @@ namespace NvidiaGpuMonitor
 
             // ── Header ──
             Text.Font = GameFont.Medium;
-            listing.Label("NVIDIA GPU Monitor");
+            listing.Label("GPU Monitor for NVIDIA");
             Text.Font = GameFont.Small;
             listing.GapLine();
             listing.Gap(4f);

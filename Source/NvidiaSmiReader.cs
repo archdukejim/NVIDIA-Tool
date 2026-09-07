@@ -64,7 +64,7 @@ namespace NvidiaGpuMonitor
             {
                 _available = false;
                 LastError = "nvml.dll not found — GPU VRAM advisories unavailable (expected on machines without an NVIDIA driver).";
-                Log.Message($"[NVIDIA Monitor] {LastError}");
+                Log.Message($"[GPU Monitor] {LastError}");
                 return;
             }
 
@@ -93,7 +93,7 @@ namespace NvidiaGpuMonitor
             }
 
             _available = true;
-            Log.Message($"[NVIDIA Monitor] NVML initialized. GPU: {GpuName}, Driver: {DriverVersion}");
+            Log.Message($"[GPU Monitor] NVML initialized. GPU: {GpuName}, Driver: {DriverVersion}");
 
             while (!_shutdown)
             {
@@ -162,7 +162,7 @@ namespace NvidiaGpuMonitor
                 if (result != Nvml.SUCCESS)
                 {
                     LastError = $"NVML init failed (code {result}).";
-                    Log.Warning($"[NVIDIA Monitor] {LastError}");
+                    Log.Warning($"[GPU Monitor] {LastError}");
                     return false;
                 }
 
@@ -171,7 +171,7 @@ namespace NvidiaGpuMonitor
                 if (result != Nvml.SUCCESS || _device == IntPtr.Zero)
                 {
                     LastError = $"No NVIDIA GPU found (code {result}).";
-                    Log.Warning($"[NVIDIA Monitor] {LastError}");
+                    Log.Warning($"[GPU Monitor] {LastError}");
                     Nvml.Shutdown();
                     return false;
                 }
@@ -190,13 +190,13 @@ namespace NvidiaGpuMonitor
             catch (DllNotFoundException)
             {
                 LastError = "nvml.dll not found. NVIDIA drivers may not be installed.";
-                Log.Warning($"[NVIDIA Monitor] {LastError}");
+                Log.Warning($"[GPU Monitor] {LastError}");
                 return false;
             }
             catch (Exception ex)
             {
                 LastError = $"NVML init error: {ex.Message}";
-                Log.Warning($"[NVIDIA Monitor] {LastError}");
+                Log.Warning($"[GPU Monitor] {LastError}");
                 return false;
             }
         }

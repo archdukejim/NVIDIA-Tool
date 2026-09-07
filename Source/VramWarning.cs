@@ -233,7 +233,7 @@ namespace NvidiaGpuMonitor
                 null));
 
             Log.Warning(
-                $"[NVIDIA Monitor] Low VRAM: {freeGb:F1} GB free of {totalGb:F1} GB. " +
+                $"[GPU Monitor] Low VRAM: {freeGb:F1} GB free of {totalGb:F1} GB. " +
                 $"System: {systemGb:F1} GB, LM Studio: {lmsGb:F1} GB.");
         }
     }
