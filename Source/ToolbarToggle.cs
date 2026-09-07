@@ -3,7 +3,7 @@ using RimWorld;
 using UnityEngine;
 using Verse;
 
-namespace RimSynapse.NvidiaTool
+namespace NvidiaGpuMonitor
 {
     /// <summary>
     /// Adds a GPU overlay toggle button to RimWorld's play settings toolbar
@@ -24,7 +24,7 @@ namespace RimSynapse.NvidiaTool
             GpuIcon = GenerateGpuIcon();
 
             // Apply Harmony patch
-            var harmony = new Harmony("rimsynapse.nvtool.toolbar");
+            var harmony = new Harmony("gputools.nvidiamonitor.toolbar");
             harmony.PatchAll(typeof(ToolbarToggle).Assembly);
         }
 
@@ -142,9 +142,9 @@ namespace RimSynapse.NvidiaTool
             bool wasOn = isOn;
 
             row.ToggleableIcon(ref isOn, ToolbarToggle_GetIcon(),
-                "Toggle RimSynapse GPU Overlay\n\n" +
+                "Toggle GPU Overlay\n\n" +
                 "Shows real-time VRAM usage breakdown.\n" +
-                "Click to toggle. Use mod settings\nto switch Basic/Advanced.",
+                "Click to toggle. Use mod settings\nto switch Basic / LM Studio / Developer.",
                 SoundDefOf.Mouseover_ButtonToggle);
 
             // Handle toggle change

@@ -1,7 +1,7 @@
 using HarmonyLib;
 using Verse;
 
-namespace RimSynapse.NvidiaTool
+namespace NvidiaGpuMonitor
 {
     /// <summary>
     /// Harmony patch that drives the overlay HUD and VRAM warning

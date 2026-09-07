@@ -2,10 +2,10 @@ using System;
 using UnityEngine;
 using Verse;
 
-namespace RimSynapse.NvidiaTool
+namespace NvidiaGpuMonitor
 {
     /// <summary>
-    /// RimSynapse NVIDIA Tool — dashboard window for GPU stats and LLM performance.
+    /// NVIDIA GPU Monitor — dashboard window for GPU hardware stats and optional LM Studio status.
     /// Section drawing methods are in DevToolsWindow_Sections.cs (partial class).
     /// This file contains the window shell, DoWindowContents, and drawing helpers.
     /// </summary>
@@ -46,7 +46,7 @@ namespace RimSynapse.NvidiaTool
 
         public override void DoWindowContents(Rect inRect)
         {
-            float contentHeight = 1200f;
+            float contentHeight = 700f;
             var viewRect = new Rect(0, 0, inRect.width - 20f, contentHeight);
             Widgets.BeginScrollView(inRect, ref _scrollPos, viewRect);
 
@@ -55,7 +55,7 @@ namespace RimSynapse.NvidiaTool
 
             // ── Header ──
             Text.Font = GameFont.Medium;
-            listing.Label("RimSynapse NVIDIA Tool");
+            listing.Label("GPU Monitor for NVIDIA");
             Text.Font = GameFont.Small;
             listing.GapLine();
             listing.Gap(4f);
@@ -64,14 +64,6 @@ namespace RimSynapse.NvidiaTool
             DrawGpuSection(listing);
             listing.Gap(8f);
             DrawLmStudioSection(listing);
-            listing.Gap(8f);
-            DrawQueueSection(listing);
-            listing.Gap(8f);
-            DrawTokenSection(listing);
-            listing.Gap(8f);
-            DrawModStatsSection(listing);
-            listing.Gap(8f);
-            DrawContextSection(listing);
 
             listing.End();
             Widgets.EndScrollView();

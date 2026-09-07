@@ -1,17 +1,16 @@
 using System;
-using System.Text.RegularExpressions;
 using UnityEngine;
 
-namespace RimSynapse.NvidiaTool
+namespace NvidiaGpuMonitor
 {
     /// <summary>
-    /// Estimates per-application VRAM breakdown without relying on
-    /// NVML process enumeration (which requires elevated privileges).
+    /// Estimates a per-application VRAM breakdown from measured totals.
     ///
     /// Sources:
     ///   RimWorld  → Unity's own Texture.currentTextureMemory + overhead
-    ///   LM Studio → Model parameter count parsed from Core settings
-    ///   System    → Total VRAM used - RimWorld - LM Studio
+    ///   LM Studio → optional, from the standalone <see cref="LmStudioProbe"/> (off unless
+    ///               the user enables it). A remote host contributes nothing to local VRAM.
+    ///   System    → Total VRAM used − RimWorld − LM Studio
     /// </summary>
     internal static class VramBreakdown
     {
@@ -52,12 +51,11 @@ namespace RimSynapse.NvidiaTool
             // 1. RimWorld — query Unity's own GPU memory tracking
             _rimworldMb = GetRimWorldVramMb();
 
-            // 2. LM Studio — estimate from loaded model parameters.
-            //    Only counts toward LOCAL VRAM when the endpoint is on this machine:
-            //    a remote LM Studio host runs on a different GPU, so attributing its
-            //    estimate here would be phantom VRAM and would distort the System line too.
-            _lmStudioIsRemote = IsLmStudioRemote();
-            _lmStudioMb = _lmStudioIsRemote ? 0f : EstimateLmStudioVramMb();
+            // 2. LM Studio — from the optional standalone probe. The probe already returns
+            //    zero when disabled, unreachable, or pointed at a remote host, so a remote
+            //    model never becomes phantom local VRAM.
+            _lmStudioIsRemote = LmStudioProbe.Enabled && LmStudioProbe.IsRemote;
+            _lmStudioMb = LmStudioProbe.Enabled ? LmStudioProbe.EstimatedVramMb : 0f;
 
             // 3. Split LM Studio into VRAM vs offloaded RAM based on what's physically possible
             float maxAvailableForLms = totalUsedMb - _rimworldMb;
@@ -118,122 +116,6 @@ namespace RimSynapse.NvidiaTool
                 // If Unity's API fails, return a reasonable default
                 return 200f; // ~200 MB is typical for RimWorld
             }
-        }
-
-        // ────────────────────────────────────────────────────────
-        //  LM Studio VRAM (estimated from model name)
-        // ────────────────────────────────────────────────────────
-
-        /// <summary>
-        /// Estimates LM Studio's VRAM usage from the loaded model name.
-        /// Parses parameter count (e.g., "12b", "7b") and applies
-        /// Q4_K_M quantization estimate (~0.65 GB per billion params).
-        /// </summary>
-        private static float EstimateLmStudioVramMb()
-        {
-            try
-            {
-                string modelName = GetLoadedModelName();
-                if (string.IsNullOrEmpty(modelName)) return 0f;
-
-                float billionParams = ParseBillionParams(modelName);
-                if (billionParams <= 0f) return 0f;
-
-                // Q4_K_M quantization: ~0.65 GB per billion parameters
-                // Add ~500 MB overhead for KV cache, context, runtime
-                float estimateGb = (billionParams * 0.65f) + 0.5f;
-
-                return estimateGb * 1024f; // convert GB → MB
-            }
-            catch
-            {
-                return 0f;
-            }
-        }
-
-        /// <summary>
-        /// True when RimSynapse Core is configured to talk to a remote LM Studio host.
-        /// In that case the model runs on another machine's GPU, so none of its VRAM
-        /// is resident on this GPU and it must not be attributed to local VRAM.
-        /// </summary>
-        private static bool IsLmStudioRemote()
-        {
-            try
-            {
-                return RimSynapseMod.Instance?.Settings?.IsRemoteUrl ?? false;
-            }
-            catch
-            {
-                return false;
-            }
-        }
-
-        /// <summary>
-        /// Get the currently loaded model name from Core.
-        /// Prefers the LIVE model from ModelManager (queried from LM Studio API)
-        /// over the persisted settings value.
-        /// </summary>
-        private static string GetLoadedModelName()
-        {
-            try
-            {
-                // Live model from LM Studio API (via Core's public API)
-                string active = SynapseClient.ActiveModelName;
-                if (!string.IsNullOrEmpty(active)) return active;
-
-                // Fallback: user-selected model in settings
-                var settings = RimSynapseMod.Instance?.Settings;
-                return settings?.selectedModel;
-            }
-            catch
-            {
-                return null;
-            }
-        }
-
-        /// <summary>
-        /// Parse billion parameter count from model name.
-        /// Handles patterns like:
-        ///   "gemma-4-12b-qat"      → 12
-        ///   "llama-3.3-70b"        → 70
-        ///   "qwen2.5-7b-instruct"  → 7
-        ///   "gemma-4-e4b"          → 4 (expert/MoE shorthand)
-        ///   "gemma-4-26b-a4b"      → 26 (active params noted but total used)
-        ///   "phi-4-mini-3.8b"      → 3.8
-        /// </summary>
-        internal static float ParseBillionParams(string modelName)
-        {
-            if (string.IsNullOrEmpty(modelName)) return 0f;
-
-            modelName = modelName.ToLowerInvariant();
-
-            // Match standard patterns: "12b", "7b", "70b", "3.8b", "0.5b"
-            // Skip quantization markers: "q4b", "q8b"
-            var match = Regex.Match(modelName, @"(?<![a-z])(\d+\.?\d*)b(?!\w)");
-            if (match.Success)
-            {
-                float val;
-                if (float.TryParse(match.Groups[1].Value, out val) && val > 0f)
-                    return val;
-            }
-
-            // Handle MoE/expert notation: "e4b" = expert 4B, "a4b" = active 4B
-            // (e.g., gemma-4-e4b = 4B active expert parameters)
-            var moeMatch = Regex.Match(modelName, @"[ea](\d+\.?\d*)b(?!\w)");
-            if (moeMatch.Success)
-            {
-                float val;
-                if (float.TryParse(moeMatch.Groups[1].Value, out val) && val > 0f)
-                    return val;
-            }
-
-            // Fallback: check for known size keywords
-            if (modelName.Contains("mini")) return 3.8f;
-            if (modelName.Contains("small")) return 7f;
-            if (modelName.Contains("medium")) return 13f;
-            if (modelName.Contains("large")) return 34f;
-
-            return 0f;
         }
     }
 }

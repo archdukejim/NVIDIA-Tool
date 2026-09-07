@@ -1,26 +1,42 @@
-# RimSynapse-DevTools Design Document
+# NVIDIA GPU Monitor — Design Notes
 
 ## Overview
-RimSynapse-DevTools provides a suite of quality-of-life tools, dashboards, and debugging utilities intended for mod developers building on the RimSynapse framework. It is not required for standard end-users.
+A standalone, general-purpose GPU toolkit for RimWorld. It surfaces the local NVIDIA
+GPU's health inside the game UI. It has **no dependency on any other mod** (only Harmony),
+keeps **zero save-file footprint**, and does nothing on non-NVIDIA hardware but stay quiet.
 
-**Dependencies:** RimSynapse Core.
+Formerly "RimSynapse - NVIDIA Tool"; the RimSynapse-specific LLM tooling (request queue,
+throttle, token metrics, per-mod stats, context embedding) was removed when the mod became
+standalone. RimSynapse Core now owns cross-vendor VRAM monitoring natively, in a different
+way (a PDH-based meter and its own advisory).
 
-## Core Features
+## Architecture
 
-### 1. Status Dashboard
-*   **Connectivity & Models:** Displays current LM Studio connectivity status and the loaded model.
-*   **Hardware Stats:** Shows basic GPU utilization or memory stats if exposed by the server.
-*   **Active Tracking:** Monitors the number of active pawns currently engaging with the LLM.
-*   **Queue State:** Visualizes the depth and processing state of the Core async task queue.
+- **`NvidiaSmiReader`** — background thread that reads GPU stats via NVML P/Invoke
+  (`nvml.dll`). Probes for the library with a quiet Win32 `LoadLibrary` first to avoid
+  Mono loader spam on machines without an NVIDIA driver. Exposes VRAM, temp, power, clocks,
+  fan, utilisation, and (where NVML permits) per-process VRAM.
+- **`NvmlBindings`** — the raw NVML P/Invoke declarations and `GpuProcessInfo`.
+- **`LmStudioProbe`** — optional, opt-in. A background thread that GETs `{endpoint}/v1/models`
+  to read the loaded model and estimate its VRAM from the parameter count. Detects a remote
+  host so its memory is never attributed to the local GPU. Talks to LM Studio directly — no
+  Core, no other mod.
+- **`VramBreakdown`** — splits measured used-VRAM into System / RimWorld (Unity texture
+  memory) / LM Studio (from the probe).
+- **`VramWarning`** — the on-load VRAM advisory. Defers (stays silent) when another loaded
+  mod already ships its own advisory, matched by packageId with no compile-time dependency.
+- **`OverlayHud` / `OverlayHud_Rendering`** — the toggleable on-screen HUD (Off → Basic →
+  LM Studio → Developer), driven by a Harmony postfix on `GameComponentUtility.GameComponentOnGUI`
+  (no GameComponent, so no save entry).
+- **`ToolbarToggle`** — the play-settings toolbar button.
+- **`DevToolsWindow` / `_Sections`** — the dashboard window (GPU + optional LM Studio).
+- **`DevToolsMod` / `DevToolsSettings`** — mod entry point and persisted settings.
+- **`NvidiaMonitorDebugActions`** — `[DebugAction]`s under the "NVIDIA Monitor" category for
+  headless validation (dump GPU stats, dump/force the VRAM breakdown/advisory, probe LM Studio,
+  cycle overlay).
 
-### 2. Scalability Metrics & Capacity Planning
-*   **Token Usage Tracking:** Tracks average prompt tokens, completion tokens, and generation duration over the last 50 requests.
-*   **Capacity Estimation:** Estimates the maximum number of concurrent pawns the system can handle based on the active model's context window.
-    *   `tokensPerPawn = max(100, avgPromptTokens / activePawnCount)` (or a configured default).
-    *   `maxPawnsByContext = contextTarget / tokensPerPawn`.
-*   **Throughput:** Tracks requests per minute to monitor load.
-
-### 3. Debug Logging
-*   **Structured Logs:** Maintains a structured in-memory buffer (e.g., last 100 entries) of system events, API errors, and state changes.
-*   **Token Logs:** Specific logging for token counts per request to help developers optimize their prompt templates.
-*   **Pawn TTL Tracker:** Monitors the Time-To-Live (TTL) of active pawn tracking (e.g., pruning after 10 minutes of inactivity).
+## Non-goals
+- No control of models or settings; the advisory is advice only.
+- No VRAM management or allocation.
+- No non-NVIDIA GPU support.
+- No gameplay.

@@ -2,21 +2,15 @@
 
 ---
 
-## "Fallback handler could not load library ... nvml" appears in my log
+## A line about NVML being unavailable appears in my log
 
-**This is expected on a machine without NVML, and nothing is broken.**
+**This is expected on a machine without an NVIDIA driver, and nothing is broken.**
 
-At startup you may see a run of lines like:
+The mod reads the GPU through NVML (`nvml.dll`, which ships with the NVIDIA driver). On a machine where that library is not present, the mod logs a single explanatory line:
 
-> Fallback handler could not load library ...MonoBleedingEdge/nvml
-> Fallback handler could not load library ...MonoBleedingEdge/nvml.dll
-> Fallback handler could not load library ...MonoBleedingEdge/libnvml
+> nvml.dll not found — GPU VRAM advisories unavailable (expected on machines without an NVIDIA driver).
 
-There are sixteen of them: four filename variants attempted four times each. They are Mono's library loader trying to resolve NVML, not exceptions, and the mod falls back to `nvidia-smi` without difficulty.
-
-They are unhelpful for two reasons we accept as our fault: they are the **first alarming-looking text in the log**, and they appear before this mod can log anything of its own to explain them. If you are reading a log while diagnosing something unrelated, these are not it.
-
-This is tracked and will be reduced to a single explanatory line.
+It probes for the library quietly first (via the Windows loader), so a missing driver does **not** produce a wall of "Fallback handler could not load library" lines. If you are on an NVIDIA machine and still see this, your driver install is the place to look.
 
 ---
 
@@ -24,32 +18,36 @@ This is tracked and will be reduced to a single explanatory line.
 
 In rough order of likelihood:
 
-- **Not an NVIDIA card.** This mod reads NVIDIA tooling only. It stays quiet rather than reporting numbers it cannot verify.
-- **`nvidia-smi` not available.** It ships with the NVIDIA driver. If running it in a terminal fails, the mod cannot read anything either — fix it there first.
-- **Your model runs on another machine.** The readout covers the machine running RimWorld. A remote backend means a quiet local GPU, correctly.
-- **Overlay is off.** It is off by default. Toggle it from the toolbar button or mod settings — the developer tools window works regardless.
+- **Not an NVIDIA card.** This mod reads NVIDIA's management library (NVML) only. It stays quiet rather than reporting numbers it cannot verify. It does not monitor AMD or Intel GPUs.
+- **Driver problem.** NVML ships with the NVIDIA driver. Running `nvidia-smi` yourself in a terminal is a quick sanity check — if that fails, the mod cannot read anything either, so fix the driver first.
+- **Overlay is off.** It is off by default. Toggle it from the toolbar button (bottom-right play settings row) or mod settings — the dashboard window works regardless.
 
 ---
 
 ## Numbers look implausible
 
-**VRAM higher than expected** — other applications share the card, and RimWorld is drawing the game on it too. The total is the card's, not the model's.
+**VRAM higher than expected** — other applications share the card, and RimWorld is drawing the game on it too. The total is the card's, not any one model's.
 
-**Utilisation near zero with the model clearly working** — normal. Requests are spiky; a two-second poll frequently lands between them. Judge by response times rather than by instantaneous utilisation.
+**Utilisation near zero with a model clearly working** — normal. Inference is spiky; a periodic poll frequently lands between requests. Judge by VRAM and temperature rather than instantaneous utilisation.
 
-**Breakdown does not sum to the reported total** — the breakdown is an *estimate* of where memory is going, based on model and context settings. The total is measured. They will not agree exactly, and the breakdown is for reasoning about proportions rather than accounting.
+**Breakdown does not sum to the reported total** — the breakdown is an *estimate* of where memory is going (System / RimWorld / an optional LM Studio model). The total is measured. They will not agree exactly; the breakdown is for reasoning about proportions rather than accounting.
+
+---
+
+## LM Studio shows as offline or the model is blank
+
+The LM Studio feature is **optional and off by default**. If you enabled it:
+
+- Check the **endpoint** in mod settings (default `http://127.0.0.1:1234`) matches where LM Studio is serving.
+- **On Windows, use `127.0.0.1` rather than `localhost`.** Windows often resolves `localhost` to IPv6 (`::1`) first, but LM Studio binds to IPv4 (`127.0.0.1`) only, so a `localhost` endpoint can fail to connect. The tool auto-retries `localhost` against `127.0.0.1`, but setting `127.0.0.1` directly avoids the problem entirely.
+- Make sure a model is actually loaded in LM Studio and its server is running.
+- A **remote** endpoint (not localhost) is detected and shown as remote; its memory is intentionally not counted against your local GPU.
 
 ---
 
 ## The overlay is in the way
 
-Toggle it from the toolbar button. The developer tools window carries the same information without occupying screen space.
-
----
-
-## Performance cost concerns
-
-Polling has a cost, which is why the interval is adjustable. Raise it, or turn the overlay off and use the window when you want a reading. The mod is a diagnostic tool — if it is costing you frames, it has stopped doing its job.
+Toggle it from the toolbar button, or drag its header to reposition it. The dashboard window carries the same GPU information without occupying screen space.
 
 ---
 

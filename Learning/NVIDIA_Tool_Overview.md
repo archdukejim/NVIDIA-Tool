@@ -1,37 +1,34 @@
 # NVIDIA Tool Overview
 
-RimSynapse runs a language model in the background while you play. This mod makes that visible: what the GPU is doing, where VRAM is going, and how long requests are taking.
+NVIDIA GPU Monitor makes your GPU visible while you play: what it is doing, and where VRAM is going.
 
 ---
 
 ## What it shows you
 
-**Live GPU statistics** — VRAM in use, temperature, utilisation percentage and power draw, refreshed on a configurable interval (two seconds by default).
+**Live GPU statistics** — VRAM in use, temperature, utilisation, power draw, clocks and fan speed, refreshed on an interval.
 
-**A VRAM breakdown** — rather than one total, an estimate split into model weights, KV cache, context window and overhead. A model that "fits" until you raise the context window is the usual reason a setup stops working, and this is where you see that coming.
+**A VRAM breakdown** — rather than one total, an estimate split into System/desktop, RimWorld itself, and (optionally) a local LM Studio model. A model that "fits" until you raise the context window is a common reason a setup stops working, and this is where you see that coming.
 
-**VRAM warnings** — a heads-up when you are approaching your card's limit, with suggestions about model size and context window.
+**A VRAM advisory** — a heads-up on colony load when you are approaching your card's limit, with practical suggestions.
 
-**Request metrics** — every LLM request RimSynapse makes: response time, token counts, throughput, and how deep the queue is. This is what tells you whether a stall is the model being slow or the queue being long, which are different problems.
+**Optional LM Studio awareness** — when enabled, the loaded model name (read directly from your LM Studio endpoint) and an estimate of its VRAM footprint. A remote host is detected and never counted as local VRAM. This is opt-in and needs no other mod.
 
 ---
 
 ## Where to find it
 
-**The on-screen overlay** is a compact heads-up display. It is **off by default** — toggle it from the toolbar button or in mod settings.
+**The on-screen overlay** is a compact heads-up display. It is **off by default** — toggle it from the toolbar button (bottom-right play settings row) or in mod settings. Cycle it Off → Basic (VRAM) → LM Studio → Developer (full hardware).
 
-**The developer tools window** is the full view, with tabs for GPU statistics, request history, VRAM analysis and configuration. Open it from the same toolbar button.
+**The dashboard window** is the full view: GPU hardware stats and, when enabled, LM Studio status. Open it from mod settings.
 
 ---
 
 ## How it reads the GPU
 
-Two paths, and knowing which is which helps when something looks wrong:
+- **NVML** — NVIDIA's management library (`nvml.dll`, shipped with every NVIDIA driver), called directly via P/Invoke. No process spawning and no shell commands, so it is Workshop-safe.
 
-- **`nvidia-smi`** — NVIDIA's own command-line tool, polled on an interval. This is the primary source and the one behind most of what you see.
-- **NVML** — NVIDIA's management library, called directly for lower-overhead readings where available.
-
-If neither is available — no NVIDIA card, drivers absent, or the tooling not on the system — the mod does not guess. It reports nothing rather than plausible-looking numbers.
+If NVML is not available — no NVIDIA card, or drivers absent — the mod does not guess. It reports nothing rather than plausible-looking numbers, and logs a single line saying so.
 
 See [Troubleshooting](Troubleshooting) if you see loader messages about NVML in your log at startup. They are expected on machines without it and are not an error.
 
@@ -39,13 +36,13 @@ See [Troubleshooting](Troubleshooting) if you see loader messages about NVML in 
 
 ## What it does not do
 
-- It does not change your model, context window, or any RimSynapse setting. Warnings are advice; acting on them is yours.
+- It does not change your model, context window, or any setting. The advisory is advice; acting on it is yours.
 - It does not manage VRAM or free memory.
 - It does not monitor non-NVIDIA GPUs.
-- It adds no gameplay of its own.
+- It adds no gameplay of its own, and keeps zero save-file footprint (safe to add or remove from any save).
 
 ---
 
 ## Performance cost
 
-Polling `nvidia-smi` has a small cost, which is why the interval is adjustable. If you are chasing frame time on a marginal machine, raising the interval or turning the overlay off costs you nothing but resolution in the readout.
+GPU stats are polled on a background thread on an interval, so the cost to frame time is negligible. The optional LM Studio probe makes a short HTTP call to your endpoint on its own interval and degrades quietly if the endpoint is unreachable.

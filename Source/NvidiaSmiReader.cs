@@ -4,8 +4,9 @@ using System.Diagnostics;
 using System.Runtime.InteropServices;
 using System.Text;
 using System.Threading;
+using Verse;
 
-namespace RimSynapse.NvidiaTool
+namespace NvidiaGpuMonitor
 {
     /// <summary>
     /// Reads GPU stats via NVML (NVIDIA Management Library) P/Invoke.
@@ -63,7 +64,7 @@ namespace RimSynapse.NvidiaTool
             {
                 _available = false;
                 LastError = "nvml.dll not found — GPU VRAM advisories unavailable (expected on machines without an NVIDIA driver).";
-                RimSynapse.SynapseLogger.Message($"[RimSynapse NV] {LastError}");
+                Log.Message($"[GPU Monitor] {LastError}");
                 return;
             }
 
@@ -71,7 +72,7 @@ namespace RimSynapse.NvidiaTool
             _pollThread = new Thread(PollLoop)
             {
                 IsBackground = true,
-                Name = "RimSynapse-NVML",
+                Name = "NvidiaGpuMonitor-NVML",
             };
             _pollThread.Start();
         }
@@ -92,14 +93,14 @@ namespace RimSynapse.NvidiaTool
             }
 
             _available = true;
-            RimSynapse.SynapseLogger.Message($"[RimSynapse NV] NVML initialized. GPU: {GpuName}, Driver: {DriverVersion}");
+            Log.Message($"[GPU Monitor] NVML initialized. GPU: {GpuName}, Driver: {DriverVersion}");
 
             while (!_shutdown)
             {
                 try
                 {
                     PollGpuStats();
-                    PushToCoreFramework();
+                    PollProcesses();
                 }
                 catch (Exception ex)
                 {
@@ -161,7 +162,7 @@ namespace RimSynapse.NvidiaTool
                 if (result != Nvml.SUCCESS)
                 {
                     LastError = $"NVML init failed (code {result}).";
-                    RimSynapse.SynapseLogger.Warning($"[RimSynapse NV] {LastError}");
+                    Log.Warning($"[GPU Monitor] {LastError}");
                     return false;
                 }
 
@@ -170,7 +171,7 @@ namespace RimSynapse.NvidiaTool
                 if (result != Nvml.SUCCESS || _device == IntPtr.Zero)
                 {
                     LastError = $"No NVIDIA GPU found (code {result}).";
-                    RimSynapse.SynapseLogger.Warning($"[RimSynapse NV] {LastError}");
+                    Log.Warning($"[GPU Monitor] {LastError}");
                     Nvml.Shutdown();
                     return false;
                 }
@@ -189,13 +190,13 @@ namespace RimSynapse.NvidiaTool
             catch (DllNotFoundException)
             {
                 LastError = "nvml.dll not found. NVIDIA drivers may not be installed.";
-                RimSynapse.SynapseLogger.Warning($"[RimSynapse NV] {LastError}");
+                Log.Warning($"[GPU Monitor] {LastError}");
                 return false;
             }
             catch (Exception ex)
             {
                 LastError = $"NVML init error: {ex.Message}";
-                RimSynapse.SynapseLogger.Warning($"[RimSynapse NV] {LastError}");
+                Log.Warning($"[GPU Monitor] {LastError}");
                 return false;
             }
         }
@@ -364,35 +365,6 @@ namespace RimSynapse.NvidiaTool
             catch
             {
                 return $"PID {pid}";
-            }
-        }
-
-        /// <summary>
-        /// Push stats to Core's GpuStats framework so other mods can read them.
-        /// </summary>
-        private static void PushToCoreFramework()
-        {
-            var gpu = SynapseClient.Gpu;
-            if (gpu == null) return;
-
-            lock (_lock)
-            {
-                gpu.supported = true;
-                gpu.utilizationPercent = UtilizationPercent;
-                gpu.usedVramGb = UsedVramMb / 1024f;
-                gpu.totalVramGb = TotalVramMb / 1024f;
-                gpu.lastUpdated = LastUpdated;
-
-                gpu.processes.Clear();
-                foreach (var p in Processes)
-                {
-                    gpu.processes.Add(new GpuProcess
-                    {
-                        pid = p.Pid,
-                        name = p.Name,
-                        vramMb = p.VramMb,
-                    });
-                }
             }
         }
     }

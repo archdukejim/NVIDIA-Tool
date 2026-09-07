@@ -3,7 +3,7 @@ using HarmonyLib;
 using UnityEngine;
 using Verse;
 
-namespace RimSynapse.NvidiaTool
+namespace NvidiaGpuMonitor
 {
     /// <summary>
     /// Compact, always-on-screen GPU overlay HUD.
@@ -14,8 +14,8 @@ namespace RimSynapse.NvidiaTool
     /// without errors.
     ///
     /// Three display modes (cycled via button):
-    ///   Basic    → VRAM breakdown
-    ///   Advanced → + Model, tokens/s, API calls, throttle
+    ///   Basic     → VRAM breakdown
+    ///   LM Studio → + loaded model and estimated VRAM (opt-in)
     ///   Developer → + GPU temp, power, clocks, fan, utilization
     /// </summary>
     [StaticConstructorOnStartup]
@@ -54,14 +54,14 @@ namespace RimSynapse.NvidiaTool
         private static Texture2D _barFillTex;
         private static Texture2D _whiteTex;
 
-        /// <summary>Toggle overlay mode: Off → Basic → Advanced → Developer → Off.</summary>
+        /// <summary>Toggle overlay mode: Off → Basic → LM Studio → Developer → Off.</summary>
         public static void CycleMode()
         {
             switch (_mode)
             {
                 case OverlayMode.Off: _mode = OverlayMode.Basic; break;
-                case OverlayMode.Basic: _mode = OverlayMode.Advanced; break;
-                case OverlayMode.Advanced: _mode = OverlayMode.Developer; break;
+                case OverlayMode.Basic: _mode = OverlayMode.LmStudio; break;
+                case OverlayMode.LmStudio: _mode = OverlayMode.Developer; break;
                 case OverlayMode.Developer: _mode = OverlayMode.Off; break;
             }
         }
@@ -83,14 +83,15 @@ namespace RimSynapse.NvidiaTool
 
             EnsureTextures();
 
+            bool showLmStudio = _mode == OverlayMode.LmStudio || _mode == OverlayMode.Developer;
+
             // Calculate panel height based on mode
             int basicRows = 5;
-            bool showAdvanced = _mode == OverlayMode.Advanced || _mode == OverlayMode.Developer;
-            int advancedRows = showAdvanced ? 6 : 0;
+            int lmStudioRows = showLmStudio ? 3 : 0;
             int devRows = _mode == OverlayMode.Developer ? 8 : 0;
             float panelHeight = Padding + HeaderHeight + Padding
                 + (basicRows * RowHeight)
-                + (advancedRows > 0 ? 4f + (advancedRows * RowHeight) : 0f)
+                + (lmStudioRows > 0 ? 4f + (lmStudioRows * RowHeight) : 0f)
                 + (devRows > 0 ? 4f + (devRows * RowHeight) : 0f)
                 + Padding;
 
@@ -124,7 +125,7 @@ namespace RimSynapse.NvidiaTool
                 alignment = TextAnchor.MiddleLeft,
                 normal = { textColor = new Color(0.4f, 0.7f, 1.0f) },
             };
-            GUI.Label(new Rect(x, y, contentWidth * 0.6f, HeaderHeight), "▸ RimSynapse GPU", headerStyle);
+            GUI.Label(new Rect(x, y, contentWidth * 0.6f, HeaderHeight), "▸ GPU Monitor", headerStyle);
 
             // Mode toggle button (entire header is clickable)
             var modeStyle = new GUIStyle(GUI.skin.label)
@@ -137,10 +138,10 @@ namespace RimSynapse.NvidiaTool
             switch (_mode)
             {
                 case OverlayMode.Developer: modeLabel = "[Dev]"; break;
-                case OverlayMode.Advanced: modeLabel = "[Adv]"; break;
+                case OverlayMode.LmStudio: modeLabel = "[LM]"; break;
                 default: modeLabel = "[Basic]"; break;
             }
-            
+
             // Draw the mode label
             var modeBtnRect = new Rect(x + contentWidth - 60f, y, 60f, HeaderHeight - 4f);
             GUI.Label(modeBtnRect, modeLabel, modeStyle);
@@ -148,7 +149,7 @@ namespace RimSynapse.NvidiaTool
             y += HeaderHeight + 2f;
 
             // ── VRAM Block ──
-            bool isRemote = RimSynapseMod.Instance?.Settings?.IsRemoteUrl ?? false;
+            bool isRemote = LmStudioProbe.Enabled && LmStudioProbe.IsRemote;
 
             if (isRemote)
             {
@@ -162,7 +163,7 @@ namespace RimSynapse.NvidiaTool
                 GUI.Label(new Rect(x, y, contentWidth, 20f), "REMOTE LMSTUDIO", redStyle);
                 y += 24f;
             }
-            else
+
             {
                 float totalVramGb = NvidiaSmiReader.TotalVramMb / 1024f;
                 float usedVramGb = NvidiaSmiReader.UsedVramMb / 1024f;
@@ -189,60 +190,40 @@ namespace RimSynapse.NvidiaTool
                     VramBreakdown.LmStudioVramMb, totalUsedMb, NvidiaSmiReader.TotalVramMb, VramBreakdown.LmStudioRamMb);
             }
 
-            // ── Advanced section (shown in Advanced + Developer) ──
-            if (_mode == OverlayMode.Advanced || _mode == OverlayMode.Developer)
+            // ── LM Studio section (shown in LM Studio + Developer) ──
+            if (showLmStudio)
             {
                 y += 2f;
                 var divRect = new Rect(x, y, contentWidth, 1f);
                 GUI.DrawTexture(divRect, _barBgTex);
                 y += 6f;
 
-                string modelName = "—";
-                try
+                if (!LmStudioProbe.Enabled)
                 {
-                    // Prefer live model from API, fall back to persisted setting
-                    string active = SynapseClient.ActiveModelName;
-                    if (!string.IsNullOrEmpty(active))
-                        modelName = TruncateModel(active);
-                    else
-                    {
-                        var settings = RimSynapseMod.Instance?.Settings;
-                        if (settings != null && !string.IsNullOrEmpty(settings.selectedModel))
-                            modelName = TruncateModel(settings.selectedModel);
-                    }
+                    DrawRow(x, ref y, contentWidth, "LM Studio", "disabled", TextLabel);
+                    DrawRow(x, ref y, contentWidth, "", "enable in settings", TextLabel);
+                    DrawRow(x, ref y, contentWidth, "", "", TextLabel);
                 }
-                catch { }
-                DrawRow(x, ref y, contentWidth, "Model", modelName, TextValue);
-
-                string ctxText = "—";
-                try
+                else if (LmStudioProbe.IsRemote)
                 {
-                    int ctxLimit = SynapseClient.ActiveModelContextLength ?? (RimSynapseMod.Instance?.Settings?.modelContextLimit ?? 8192);
-                    ctxText = $"{ctxLimit} tok";
+                    DrawRow(x, ref y, contentWidth, "LM Studio", "remote host", AccentYellow);
+                    DrawRow(x, ref y, contentWidth, "Model",
+                        LmStudioProbe.Reachable ? TruncateModel(LmStudioProbe.ModelName) : "—", TextValue);
+                    DrawRow(x, ref y, contentWidth, "", "(not local VRAM)", TextLabel);
                 }
-                catch { }
-                DrawRow(x, ref y, contentWidth, "Context", ctxText, TextValue);
-
-                float tokSec = RequestMetrics.TokensPerSecond;
-                DrawRow(x, ref y, contentWidth, "Tokens/s",
-                    tokSec > 0 ? $"{tokSec:F1} tok/s" : "—",
-                    tokSec > 20 ? AccentGreen : tokSec > 10 ? AccentYellow : TextValue);
-
-                DrawRow(x, ref y, contentWidth, "API Calls",
-                    RequestMetrics.TotalRequests.ToString(), TextValue);
-
-                float throttle = SynapseClient.ThrottleLevel;
-                Color throttleColor = throttle >= 0.9f ? AccentGreen
-                    : throttle >= 0.5f ? AccentYellow
-                    : throttle >= 0.2f ? AccentOrange : AccentRed;
-                DrawRow(x, ref y, contentWidth, "Throttle",
-                    $"{throttle:P0}", throttleColor);
-
-                int queueDepth = SynapseClient.TotalQueueDepth;
-                if (queueDepth > 0)
+                else if (LmStudioProbe.Reachable)
                 {
-                    DrawRow(x, ref y, contentWidth, "Queue",
-                        queueDepth.ToString(), AccentYellow);
+                    DrawRow(x, ref y, contentWidth, "Model",
+                        TruncateModel(LmStudioProbe.ModelName), TextValue);
+                    DrawRow(x, ref y, contentWidth, "Est. VRAM",
+                        $"~{LmStudioProbe.EstimatedVramMb / 1024f:F1} GB", TextValue);
+                    DrawRow(x, ref y, contentWidth, "Endpoint", "connected", AccentGreen);
+                }
+                else
+                {
+                    DrawRow(x, ref y, contentWidth, "LM Studio", "offline", AccentOrange);
+                    DrawRow(x, ref y, contentWidth, "Endpoint", "unreachable", AccentOrange);
+                    DrawRow(x, ref y, contentWidth, "", "", TextLabel);
                 }
             }
 
@@ -296,4 +277,3 @@ namespace RimSynapse.NvidiaTool
         }
     }
 }
-

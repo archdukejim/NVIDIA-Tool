@@ -2,11 +2,11 @@ using System;
 using UnityEngine;
 using Verse;
 
-namespace RimSynapse.NvidiaTool
+namespace NvidiaGpuMonitor
 {
     /// <summary>
-    /// Section drawing methods for the NVIDIA developer tools dashboard:
-    /// GPU, LM Studio, Queue, Token, Mod Stats, and Context sections.
+    /// Section drawing methods for the GPU dashboard: GPU hardware stats and the
+    /// optional LM Studio status.
     /// </summary>
     public partial class DevToolsWindow
     {
@@ -24,7 +24,7 @@ namespace RimSynapse.NvidiaTool
                 GUI.color = ColorRed;
                 listing.Label("  ✗ NVIDIA GPU not detected");
                 GUI.color = ColorDimText;
-                listing.Label("    " + (NvidiaSmiReader.LastError ?? "nvidia-smi not found"));
+                listing.Label("    " + (NvidiaSmiReader.LastError ?? "nvml.dll not found"));
                 GUI.color = prev;
                 return;
             }
@@ -88,132 +88,51 @@ namespace RimSynapse.NvidiaTool
         }
 
         // ────────────────────────────────────────────────────────
-        //  LM Studio Status
+        //  LM Studio Status (optional)
         // ────────────────────────────────────────────────────────
 
         private void DrawLmStudioSection(Listing_Standard listing)
         {
-            DrawSectionHeader(listing, "LM Studio");
+            DrawSectionHeader(listing, "LM Studio (optional)");
 
-            bool online = SynapseClient.IsOnline;
             var prev = GUI.color;
-            GUI.color = online ? ColorGreen : ColorRed;
-            listing.Label(online ? "  ✓ Connected" : "  ✗ Offline");
-            GUI.color = prev;
 
-            var settings = RimSynapseMod.Instance?.Settings;
-            if (settings != null)
+            if (!LmStudioProbe.Enabled)
             {
-                DrawLabelValue(listing, "Endpoint", settings.lmStudioUrl);
-            }
-
-            var gpu = SynapseClient.Gpu;
-            if (gpu != null && gpu.supported)
-            {
-                // GPU info already shown above
-            }
-        }
-
-        // ────────────────────────────────────────────────────────
-        //  Request Queue
-        // ────────────────────────────────────────────────────────
-
-        private void DrawQueueSection(Listing_Standard listing)
-        {
-            DrawSectionHeader(listing, "Request Queue");
-
-            int depth = SynapseClient.TotalQueueDepth;
-            float throttle = SynapseClient.ThrottleLevel;
-
-            DrawLabelValue(listing, "Queue Depth", depth.ToString());
-
-            Color throttleColor = throttle >= 0.9f ? ColorGreen
-                : throttle >= 0.6f ? ColorYellow
-                : throttle >= 0.3f ? ColorOrange : ColorRed;
-            DrawProgressBar(listing, "Throttle Level",
-                $"{throttle:P0}", throttle, throttleColor);
-
-            DrawLabelValue(listing, "Requests/Min",
-                $"{RequestMetrics.RequestsPerMinute:F1}");
-            DrawLabelValue(listing, "Avg Response",
-                $"{RequestMetrics.AvgDurationMs:F0} ms");
-            DrawLabelValue(listing, "Throttled",
-                $"{RequestMetrics.ThrottledPercent:F1}%");
-        }
-
-        // ────────────────────────────────────────────────────────
-        //  Token Metrics
-        // ────────────────────────────────────────────────────────
-
-        private void DrawTokenSection(Listing_Standard listing)
-        {
-            DrawSectionHeader(listing, "Token Metrics");
-
-            DrawLabelValue(listing, "Session Requests",
-                $"{RequestMetrics.TotalRequests} ({RequestMetrics.FailedRequests} failed)");
-            DrawLabelValue(listing, "Total Prompt Tokens",
-                $"{RequestMetrics.TotalPromptTokens:N0}");
-            DrawLabelValue(listing, "Total Completion Tokens",
-                $"{RequestMetrics.TotalCompletionTokens:N0}");
-
-            listing.Gap(4f);
-
-            DrawLabelValue(listing, "Avg Prompt Tokens",
-                $"{RequestMetrics.AvgPromptTokens:F0}");
-            DrawLabelValue(listing, "Avg Completion Tokens",
-                $"{RequestMetrics.AvgCompletionTokens:F0}");
-            DrawLabelValue(listing, "Tokens/Second",
-                $"{RequestMetrics.TokensPerSecond:F1} tok/s");
-
-            listing.Gap(4f);
-
-            int maxPawns = RequestMetrics.EstimateMaxPawns(4096, 1);
-            DrawLabelValue(listing, "Est. Max Pawns (4K ctx)", maxPawns.ToString());
-            maxPawns = RequestMetrics.EstimateMaxPawns(8192, 1);
-            DrawLabelValue(listing, "Est. Max Pawns (8K ctx)", maxPawns.ToString());
-        }
-
-        // ────────────────────────────────────────────────────────
-        //  Per-Mod Stats
-        // ────────────────────────────────────────────────────────
-
-        private void DrawModStatsSection(Listing_Standard listing)
-        {
-            DrawSectionHeader(listing, "Registered Mods");
-
-            var mods = SynapseCore.RegisteredMods;
-            if (mods == null || mods.Count == 0)
-            {
-                var prev = GUI.color;
                 GUI.color = ColorDimText;
-                listing.Label("  No companion mods registered.");
+                listing.Label("  Disabled — enable in mod settings to monitor a local model.");
                 GUI.color = prev;
                 return;
             }
 
-            foreach (var mod in mods)
+            DrawLabelValue(listing, "Endpoint", LmStudioProbe.Endpoint);
+
+            if (LmStudioProbe.Reachable)
             {
-                listing.Label($"  {mod.DisplayName}");
-                DrawLabelValue(listing, "    Requests", mod.RequestCount.ToString());
-                DrawLabelValue(listing, "    Queued", mod.QueuedCount.ToString());
-                DrawLabelValue(listing, "    Budget", $"{mod.QueryBudgetPercent:F0}%");
-                listing.Gap(2f);
+                GUI.color = ColorGreen;
+                listing.Label(LmStudioProbe.IsRemote ? "  ✓ Connected (remote host)" : "  ✓ Connected");
+                GUI.color = prev;
+
+                DrawLabelValue(listing, "Model", LmStudioProbe.ModelName ?? "—");
+                if (LmStudioProbe.IsRemote)
+                {
+                    DrawLabelValue(listing, "Local VRAM", "n/a (runs on remote GPU)");
+                }
+                else
+                {
+                    DrawLabelValue(listing, "Est. Model VRAM",
+                        $"~{LmStudioProbe.EstimatedVramMb / 1024f:F1} GB");
+                }
             }
-        }
-
-        // ────────────────────────────────────────────────────────
-        //  Context Embedding
-        // ────────────────────────────────────────────────────────
-
-        private void DrawContextSection(Listing_Standard listing)
-        {
-            DrawSectionHeader(listing, "Context Embedding");
-
-            bool enabled = SynapseCoreContext.IsEnabled();
-            var prev = GUI.color;
-            GUI.color = enabled ? ColorGreen : ColorDimText;
-            listing.Label(enabled ? "  ✓ Enabled" : "  ✗ Disabled");
-            GUI.color = prev;
+            else
+            {
+                GUI.color = ColorRed;
+                listing.Label("  ✗ Not reachable");
+                GUI.color = ColorDimText;
+                if (!string.IsNullOrEmpty(LmStudioProbe.LastError))
+                    listing.Label("    " + LmStudioProbe.LastError);
+                GUI.color = prev;
+            }
         }
     }
 }
