@@ -215,8 +215,11 @@ namespace NvidiaGpuMonitor
                 {
                     DrawRow(x, ref y, contentWidth, "Model",
                         TruncateModel(LmStudioProbe.ModelName), TextValue);
-                    DrawRow(x, ref y, contentWidth, "Est. VRAM",
-                        $"~{LmStudioProbe.EstimatedVramMb / 1024f:F1} GB", TextValue);
+                    // Prefer the measured per-process VRAM; fall back to the name-based estimate.
+                    bool measured = VramBreakdown.LmStudioMeasured;
+                    float lmGb = VramBreakdown.LmStudioVramMb / 1024f;
+                    DrawRow(x, ref y, contentWidth, measured ? "VRAM" : "Est. VRAM",
+                        (measured ? "" : "~") + $"{lmGb:F1} GB", TextValue);
                     DrawRow(x, ref y, contentWidth, "Endpoint", "connected", AccentGreen);
                 }
                 else

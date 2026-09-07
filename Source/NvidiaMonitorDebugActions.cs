@@ -37,12 +37,34 @@ namespace NvidiaGpuMonitor
         public static void DumpVramBreakdown()
         {
             VramBreakdown.Refresh();
+            string rwSrc = VramBreakdown.RimWorldMeasured ? "measured" : "estimated";
+            string lmSrc = VramBreakdown.LmStudioMeasured ? "measured" : "estimated";
             Log.Message(
-                "[GPU Monitor] VRAM breakdown (estimates):\n" +
-                $"  System:   ~{VramBreakdown.SystemMb / 1024f:F2} GB\n" +
-                $"  RimWorld: ~{VramBreakdown.RimWorldMb / 1024f:F2} GB\n" +
-                $"  LM Studio (on-GPU): ~{VramBreakdown.LmStudioVramMb / 1024f:F2} GB " +
-                $"(+{VramBreakdown.LmStudioRamMb / 1024f:F2} GB offloaded to RAM, remote={VramBreakdown.LmStudioIsRemote})");
+                "[GPU Monitor] VRAM breakdown:\n" +
+                $"  System:   {VramBreakdown.SystemMb / 1024f:F2} GB (remainder)\n" +
+                $"  RimWorld: {VramBreakdown.RimWorldMb / 1024f:F2} GB ({rwSrc})\n" +
+                $"  LM Studio (on-GPU): {VramBreakdown.LmStudioVramMb / 1024f:F2} GB ({lmSrc}, " +
+                $"+{VramBreakdown.LmStudioRamMb / 1024f:F2} GB offloaded, remote={VramBreakdown.LmStudioIsRemote})");
+        }
+
+        /// <summary>Dump the raw NVML per-process VRAM list — proves whether the driver reports
+        /// per-process memory on this system and which process names LM Studio / RimWorld use.</summary>
+        [DebugAction(Category, "Dump GPU processes", allowedGameStates = AllowedGameStates.Entry)]
+        public static void DumpProcesses()
+        {
+            var procs = NvidiaSmiReader.Processes;
+            if (procs.Count == 0)
+            {
+                Log.Message("[GPU Monitor] NVML reported no GPU processes (per-process memory may be unavailable on this driver/OS).");
+                return;
+            }
+            var sb = new System.Text.StringBuilder("[GPU Monitor] GPU processes (NVML _v3):\n");
+            foreach (var p in procs)
+            {
+                string tag = p.IsLmStudio ? " [LM Studio]" : p.IsRimWorld ? " [RimWorld]" : "";
+                sb.AppendLine($"  PID {p.Pid}  {p.Name}{tag}: {p.VramMb:F0} MB");
+            }
+            Log.Message(sb.ToString().TrimEnd());
         }
 
         /// <summary>Force the on-load VRAM status dialog to appear now (bypasses the once-per-load
