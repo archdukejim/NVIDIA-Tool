@@ -83,14 +83,18 @@ namespace NvidiaGpuMonitor
 
             EnsureTextures();
 
+            // Refresh before sizing so reported in-process consumers get their own rows.
+            VramBreakdown.Refresh();
+
             bool showLmStudio = _mode == OverlayMode.LmStudio || _mode == OverlayMode.Developer;
 
             // Calculate panel height based on mode
             int basicRows = 5;
+            int consumerRows = VramBreakdown.Consumers.Count;
             int lmStudioRows = showLmStudio ? 3 : 0;
             int devRows = _mode == OverlayMode.Developer ? 8 : 0;
             float panelHeight = Padding + HeaderHeight + Padding
-                + (basicRows * RowHeight)
+                + ((basicRows + consumerRows) * RowHeight)
                 + (lmStudioRows > 0 ? 4f + (lmStudioRows * RowHeight) : 0f)
                 + (devRows > 0 ? 4f + (devRows * RowHeight) : 0f)
                 + Padding;
@@ -188,6 +192,11 @@ namespace NvidiaGpuMonitor
                     VramBreakdown.RimWorldMb, totalUsedMb, NvidiaSmiReader.TotalVramMb);
                 DrawProcessRow(x, ref y, contentWidth, "LM Studio",
                     VramBreakdown.LmStudioVramMb, totalUsedMb, NvidiaSmiReader.TotalVramMb, VramBreakdown.LmStudioRamMb);
+
+                // In-process consumers reported by other mods via GpuMonitorApi (e.g. Local TTS).
+                foreach (var consumer in VramBreakdown.Consumers)
+                    DrawProcessRow(x, ref y, contentWidth, consumer.label,
+                        consumer.vramMb, totalUsedMb, NvidiaSmiReader.TotalVramMb);
             }
 
             // ── LM Studio section (shown in LM Studio + Developer) ──

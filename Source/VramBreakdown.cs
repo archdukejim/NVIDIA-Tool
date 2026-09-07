@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using UnityEngine;
 
 namespace NvidiaGpuMonitor
@@ -24,6 +25,8 @@ namespace NvidiaGpuMonitor
         private static bool _lmStudioIsRemote;
         private static bool _rimworldMeasured;
         private static bool _lmStudioMeasured;
+        private static List<GpuConsumer> _consumers = new List<GpuConsumer>();
+        private static float _consumersMb;
         private static DateTime _lastUpdate = DateTime.MinValue;
         private const float UpdateIntervalSec = 3f;
 
@@ -43,6 +46,11 @@ namespace NvidiaGpuMonitor
         internal static bool RimWorldMeasured => _rimworldMeasured;
         /// <summary>True when the LM Studio figure is a real per-process measurement (not a name-based estimate).</summary>
         internal static bool LmStudioMeasured => _lmStudioMeasured;
+        /// <summary>Resident in-process consumers reported by other mods via <see cref="GpuMonitorApi"/>
+        /// (e.g. Local TTS's Kokoro), carved out of the RimWorld line into their own rows.</summary>
+        internal static List<GpuConsumer> Consumers => _consumers;
+        /// <summary>Total VRAM (MB) attributed to reported in-process consumers.</summary>
+        internal static float ConsumersMb => _consumersMb;
 
         /// <summary>
         /// Refresh the breakdown. Call from the overlay's OnGUI (throttled internally).
@@ -116,7 +124,25 @@ namespace NvidiaGpuMonitor
                 }
             }
 
-            _systemMb = totalUsedMb - _rimworldMb - _lmStudioVramMb;
+            // 3. In-process consumers reported by other mods (e.g. Local TTS's Kokoro). These run
+            //    inside RimWorld's own process, so NVML counts them against RimWorld — carve them
+            //    into their own rows instead of hiding them in the RimWorld figure.
+            _consumers = GpuMonitorApi.ResidentSnapshot();
+            _consumersMb = 0f;
+            foreach (var c in _consumers) _consumersMb += c.vramMb;
+
+            float rimworldProcess = _rimworldMb;
+            if (_rimworldMeasured)
+            {
+                // Measured RimWorld VRAM already includes the in-process consumers → split for display.
+                _rimworldMb = Math.Max(0f, rimworldProcess - _consumersMb);
+                _systemMb = totalUsedMb - rimworldProcess - _lmStudioVramMb;
+            }
+            else
+            {
+                // Unity's texture estimate doesn't include them → they come out of the remainder.
+                _systemMb = totalUsedMb - rimworldProcess - _lmStudioVramMb - _consumersMb;
+            }
             if (_systemMb < 0f) _systemMb = 0f;
         }
 

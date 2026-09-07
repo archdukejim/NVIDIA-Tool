@@ -1,4 +1,4 @@
 # GPU Monitor for NVIDIA GPUs — shipped assembly manifest
-# version: 1.0.0-rc3
+# version: 1.0.0-rc4
 # format:  sha256sum — verify with 'sha256sum -c'
-e46d77f4f30cea6e7d8184095e39e56e616793eeccf34f35a14ccedb64fc7e22  NvidiaGpuMonitor.dll
+773d3215354029fb87476d80602145aa485cb76b7c40ba5637bd56fbb4208afe  NvidiaGpuMonitor.dll

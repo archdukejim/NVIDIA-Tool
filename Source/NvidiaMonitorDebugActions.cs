@@ -98,6 +98,26 @@ namespace NvidiaGpuMonitor
                 (string.IsNullOrEmpty(LmStudioProbe.LastError) ? "" : $", error={LmStudioProbe.LastError}"));
         }
 
+        private const string TestConsumerId = "gpumonitor.debug.testconsumer";
+
+        /// <summary>Register a fake ~512 MB in-process consumer through the public receiver
+        /// endpoint, then dump the breakdown — proves GpuMonitorApi and the carve-out work.</summary>
+        [DebugAction(Category, "Register test consumer + dump", allowedGameStates = AllowedGameStates.PlayingOnMap)]
+        public static void RegisterTestConsumer()
+        {
+            GpuMonitorApi.UpsertConsumer(TestConsumerId, "Debug test consumer", 512f, true);
+            Log.Message("[GPU Monitor] Registered a 512 MB test consumer via GpuMonitorApi.");
+            DumpVramBreakdown();
+        }
+
+        /// <summary>Remove the debug test consumer registered above.</summary>
+        [DebugAction(Category, "Remove test consumer", allowedGameStates = AllowedGameStates.Entry)]
+        public static void RemoveTestConsumer()
+        {
+            GpuMonitorApi.RemoveConsumer(TestConsumerId);
+            Log.Message("[GPU Monitor] Removed the test consumer.");
+        }
+
         /// <summary>Cycle the overlay HUD mode (Off → Basic → LM Studio → Developer).</summary>
         [DebugAction(Category, "Cycle overlay mode", allowedGameStates = AllowedGameStates.Entry)]
         public static void CycleOverlayMode()
