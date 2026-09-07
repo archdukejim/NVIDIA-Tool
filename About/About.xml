@@ -22,6 +22,7 @@
     <description>
 GPU Monitor for NVIDIA GPUs
 Official Wiki and Documentation: https://github.com/archdukejim/NVIDIA-Tool/wiki
+Version: v1.0.0 (Target: RimWorld 1.6)
 
 A standalone, in-game GPU toolkit for RimWorld. It renders your NVIDIA GPU's health, VRAM usage, and hardware telemetry directly inside RimWorld's UI — no external programs or overlays needed.
 
@@ -59,10 +60,19 @@ This is a general-purpose tool. It has no dependency on any other mod. It is esp
 --- Note ---
 This tool is optional and purely diagnostic. It does not affect gameplay.
 
+--- Changelog (v1.0.0) - Standalone ---
+- NEW - Rebranded to a standalone, general-purpose GPU tool. It no longer requires RimSynapse Core (or any other mod) — only Harmony.
+- NEW - Optional LM Studio awareness that talks to your endpoint directly (default 127.0.0.1:1234): reads the loaded model and estimates its VRAM footprint. Off by default. Useful for RimTalk, the RimSynapse suite, or any local-LLM setup. On Windows a "localhost" endpoint auto-retries over IPv4, working around LM Studio's IPv4-only binding.
+- Changed - Overlay modes are now Off, Basic (VRAM), LM Studio, and Developer (full hardware).
+- Changed - Plays nicely alongside mods that ship their own VRAM advisory — the duplicate on-load popup is suppressed while the overlay and dashboard stay active.
+- Removed - The RimSynapse-specific LLM dashboard (request queue, throttle, token metrics, registered mods, context embedding) that depended on Core.
+
+Full version history: https://github.com/archdukejim/NVIDIA-Tool/wiki/Changelog
+
 --- Trademark ---
 This is an independent, community-made mod. It is NOT affiliated with, endorsed by, sponsored by, or associated with NVIDIA Corporation. "NVIDIA" is a trademark of NVIDIA Corporation, used here only nominatively to describe the graphics hardware this tool is compatible with. All other trademarks are the property of their respective owners.
 
 --- Support the Project ---
-Buy me a coffee: https://buymeacoffee.com/archdukejim
+Support development: https://ko-fi.com/archdukejim
     </description>
 </ModMetaData>
