@@ -124,6 +124,18 @@ namespace NvidiaGpuMonitor
         }
 
         /// <summary>
+        /// One "  • &lt;label&gt;:  ~X.X GB" line per resident in-process consumer reported via
+        /// <see cref="GpuMonitorApi"/> (e.g. Local TTS's Kokoro). Empty when none.
+        /// </summary>
+        private static string FormatConsumerLines()
+        {
+            string lines = "";
+            foreach (var c in VramBreakdown.Consumers)
+                lines += $"  • {c.label}:  ~{c.vramMb / 1024f:F1} GB\n";
+            return lines;
+        }
+
+        /// <summary>
         /// Informational dialog — shown every load when "Always Notify" is checked.
         /// Non-alarming, just tells them their VRAM status.
         /// </summary>
@@ -152,6 +164,7 @@ namespace NvidiaGpuMonitor
                 if (lmsRamGb >= 0.05f)
                     breakdown += $"      (+~{lmsRamGb:F1} GB offloaded to system RAM, not on GPU)\n";
             }
+            breakdown += FormatConsumerLines();
             breakdown +=
                 $"  • RimWorld:          ~{rwGb:F1} GB\n" +
                 $"  • Free:              {freeGb:F1} GB\n";
@@ -206,6 +219,7 @@ namespace NvidiaGpuMonitor
                 $"Before RimWorld even started, your system was already using {usedGb:F1} GB:\n\n" +
                 $"  • System / Desktop:  ~{systemGb:F1} GB\n" +
                 lmsLines +
+                FormatConsumerLines() +
                 $"  • RimWorld:          ~{rwGb:F1} GB\n\n" +
                 $"With less than {MinFreeGb:F0} GB free, you may experience:\n" +
                 "  • Late-game slowdowns as colony grows\n" +

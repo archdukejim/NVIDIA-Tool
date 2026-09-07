@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using UnityEngine;
 
 namespace NvidiaGpuMonitor
@@ -6,11 +7,13 @@ namespace NvidiaGpuMonitor
     /// <summary>
     /// Estimates a per-application VRAM breakdown from measured totals.
     ///
-    /// Sources:
-    ///   RimWorld  → Unity's own Texture.currentTextureMemory + overhead
-    ///   LM Studio → optional, from the standalone <see cref="LmStudioProbe"/> (off unless
-    ///               the user enables it). A remote host contributes nothing to local VRAM.
-    ///   System    → Total VRAM used − RimWorld − LM Studio
+    /// Sources, best first:
+    ///   RimWorld / LM Studio → MEASURED per-process VRAM from NVML when the driver reports it
+    ///                          (accurate; sums multiple loaded models automatically).
+    ///   RimWorld (fallback)  → Unity's own Texture.currentTextureMemory + overhead.
+    ///   LM Studio (fallback) → a rough name-based estimate from LmStudioProbe (off unless the
+    ///                          user enables it). A remote host contributes nothing to local VRAM.
+    ///   System               → Total VRAM used − RimWorld − LM Studio.
     /// </summary>
     internal static class VramBreakdown
     {
@@ -20,21 +23,34 @@ namespace NvidiaGpuMonitor
         private static float _lmStudioRamMb;
         private static float _systemMb;
         private static bool _lmStudioIsRemote;
+        private static bool _rimworldMeasured;
+        private static bool _lmStudioMeasured;
+        private static List<GpuConsumer> _consumers = new List<GpuConsumer>();
+        private static float _consumersMb;
         private static DateTime _lastUpdate = DateTime.MinValue;
         private const float UpdateIntervalSec = 3f;
 
         // ── Public accessors ──
 
         internal static float RimWorldMb => _rimworldMb;
-        /// <summary>Full LM Studio estimate (VRAM-resident + any RAM-offloaded portion).</summary>
+        /// <summary>Full LM Studio figure (VRAM-resident + any RAM-offloaded portion of an estimate).</summary>
         internal static float LmStudioMb => _lmStudioMb;
         /// <summary>LM Studio portion actually resident on this GPU. Zero for a remote host.</summary>
         internal static float LmStudioVramMb => _lmStudioVramMb;
-        /// <summary>LM Studio portion estimated to be offloaded to system RAM (not on the GPU).</summary>
+        /// <summary>LM Studio portion estimated to be offloaded to system RAM (0 when measured).</summary>
         internal static float LmStudioRamMb => _lmStudioRamMb;
         internal static float SystemMb => _systemMb;
         /// <summary>True when the configured LM Studio endpoint is a remote host, so none of its VRAM is on this GPU.</summary>
         internal static bool LmStudioIsRemote => _lmStudioIsRemote;
+        /// <summary>True when the RimWorld figure is a real per-process measurement (not the Unity estimate).</summary>
+        internal static bool RimWorldMeasured => _rimworldMeasured;
+        /// <summary>True when the LM Studio figure is a real per-process measurement (not a name-based estimate).</summary>
+        internal static bool LmStudioMeasured => _lmStudioMeasured;
+        /// <summary>Resident in-process consumers reported by other mods via <see cref="GpuMonitorApi"/>
+        /// (e.g. Local TTS's Kokoro), carved out of the RimWorld line into their own rows.</summary>
+        internal static List<GpuConsumer> Consumers => _consumers;
+        /// <summary>Total VRAM (MB) attributed to reported in-process consumers.</summary>
+        internal static float ConsumersMb => _consumersMb;
 
         /// <summary>
         /// Refresh the breakdown. Call from the overlay's OnGUI (throttled internally).
@@ -48,72 +64,111 @@ namespace NvidiaGpuMonitor
             float totalUsedMb = NvidiaSmiReader.UsedVramMb;
             if (totalUsedMb <= 0f) return;
 
-            // 1. RimWorld — query Unity's own GPU memory tracking
-            _rimworldMb = GetRimWorldVramMb();
-
-            // 2. LM Studio — from the optional standalone probe. The probe already returns
-            //    zero when disabled, unreachable, or pointed at a remote host, so a remote
-            //    model never becomes phantom local VRAM.
-            _lmStudioIsRemote = LmStudioProbe.Enabled && LmStudioProbe.IsRemote;
-            _lmStudioMb = LmStudioProbe.Enabled ? LmStudioProbe.EstimatedVramMb : 0f;
-
-            // 3. Split LM Studio into VRAM vs offloaded RAM based on what's physically possible
-            float maxAvailableForLms = totalUsedMb - _rimworldMb;
-            if (maxAvailableForLms < 0f) maxAvailableForLms = 0f;
-
-            // Estimate System base overhead (e.g. max 1 GB or whatever is left)
-            float systemEstimate = Math.Min(1024f, maxAvailableForLms);
-            float lmsVramLimit = maxAvailableForLms - systemEstimate;
-            if (lmsVramLimit < 0f) lmsVramLimit = 0f;
-
-            if (_lmStudioMb > lmsVramLimit)
+            // Sum measured per-process VRAM by role. NVML's _v3 process API reports this on
+            // recent drivers; where it isn't available these stay 0 and we fall back to estimates.
+            float measuredRw = 0f, measuredLm = 0f;
+            var processes = NvidiaSmiReader.Processes;
+            foreach (var p in processes)
             {
-                _lmStudioVramMb = lmsVramLimit;
-                _lmStudioRamMb = _lmStudioMb - lmsVramLimit;
+                if (p.VramMb <= 0f) continue;
+                if (p.IsLmStudio) measuredLm += p.VramMb;
+                else if (p.IsRimWorld) measuredRw += p.VramMb;
+            }
+
+            // 1. RimWorld — prefer the measured process figure, else Unity's texture tracking.
+            if (measuredRw > 0f)
+            {
+                _rimworldMb = measuredRw;
+                _rimworldMeasured = true;
             }
             else
             {
-                _lmStudioVramMb = _lmStudioMb;
-                _lmStudioRamMb = 0f;
+                _rimworldMb = GetRimWorldVramMb();
+                _rimworldMeasured = false;
             }
 
-            _systemMb = totalUsedMb - _rimworldMb - _lmStudioVramMb;
+            // 2. LM Studio.
+            _lmStudioIsRemote = LmStudioProbe.Enabled && LmStudioProbe.IsRemote;
+
+            if (measuredLm > 0f && !_lmStudioIsRemote)
+            {
+                // Measured: the process's resident VRAM is the real, exact number, and already
+                // covers every model LM Studio has loaded. No offload guesswork needed.
+                _lmStudioMeasured = true;
+                _lmStudioMb = measuredLm;
+                _lmStudioVramMb = measuredLm;
+                _lmStudioRamMb = 0f;
+            }
+            else
+            {
+                // Fallback: rough name-based estimate (only when enabled and local).
+                _lmStudioMeasured = false;
+                _lmStudioMb = (LmStudioProbe.Enabled && !_lmStudioIsRemote) ? LmStudioProbe.EstimatedVramMb : 0f;
+
+                // Split the estimate into VRAM vs offloaded RAM by what's physically possible.
+                float maxAvailableForLms = totalUsedMb - _rimworldMb;
+                if (maxAvailableForLms < 0f) maxAvailableForLms = 0f;
+                float systemEstimate = Math.Min(1024f, maxAvailableForLms);
+                float lmsVramLimit = maxAvailableForLms - systemEstimate;
+                if (lmsVramLimit < 0f) lmsVramLimit = 0f;
+
+                if (_lmStudioMb > lmsVramLimit)
+                {
+                    _lmStudioVramMb = lmsVramLimit;
+                    _lmStudioRamMb = _lmStudioMb - lmsVramLimit;
+                }
+                else
+                {
+                    _lmStudioVramMb = _lmStudioMb;
+                    _lmStudioRamMb = 0f;
+                }
+            }
+
+            // 3. In-process consumers reported by other mods (e.g. Local TTS's Kokoro). These run
+            //    inside RimWorld's own process, so NVML counts them against RimWorld — carve them
+            //    into their own rows instead of hiding them in the RimWorld figure.
+            _consumers = GpuMonitorApi.ResidentSnapshot();
+            _consumersMb = 0f;
+            foreach (var c in _consumers) _consumersMb += c.vramMb;
+
+            float rimworldProcess = _rimworldMb;
+            if (_rimworldMeasured)
+            {
+                // Measured RimWorld VRAM already includes the in-process consumers → split for display.
+                _rimworldMb = Math.Max(0f, rimworldProcess - _consumersMb);
+                _systemMb = totalUsedMb - rimworldProcess - _lmStudioVramMb;
+            }
+            else
+            {
+                // Unity's texture estimate doesn't include them → they come out of the remainder.
+                _systemMb = totalUsedMb - rimworldProcess - _lmStudioVramMb - _consumersMb;
+            }
             if (_systemMb < 0f) _systemMb = 0f;
         }
 
         // ────────────────────────────────────────────────────────
-        //  RimWorld VRAM (from Unity)
+        //  RimWorld VRAM (Unity fallback)
         // ────────────────────────────────────────────────────────
 
         /// <summary>
-        /// Uses Unity's own memory APIs to determine how much VRAM
-        /// RimWorld is consuming. No external calls needed.
+        /// Uses Unity's own memory APIs to determine how much VRAM RimWorld is consuming.
+        /// A fallback for when NVML per-process VRAM isn't available on the host.
         /// </summary>
         private static float GetRimWorldVramMb()
         {
             try
             {
-                // Texture.currentTextureMemory = actual GPU-resident texture bytes
-                // This is the most reliable Unity API for GPU memory tracking
+                // Texture.currentTextureMemory = actual GPU-resident texture bytes.
                 long texBytes = (long)Texture.currentTextureMemory;
                 float texMb = texBytes / (1024f * 1024f);
 
-                // Add overhead for:
-                //   - Render targets / frame buffers (~15-25% of texture memory)
-                //   - Shader programs, constant buffers
-                //   - Mesh GPU buffers (vertex/index)
-                //   - Unity internal GPU allocations
-                // Conservative 40% overhead multiplier for a 2D-heavy game like RimWorld
+                // Add overhead for render targets, shaders, mesh buffers, and Unity internals.
                 float estimatedTotalMb = texMb * 1.4f;
-
-                // Floor: even a minimal RimWorld scene uses some GPU memory
                 if (estimatedTotalMb < 50f) estimatedTotalMb = 50f;
-
                 return estimatedTotalMb;
             }
             catch
             {
-                // If Unity's API fails, return a reasonable default
                 return 200f; // ~200 MB is typical for RimWorld
             }
         }

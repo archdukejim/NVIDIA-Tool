@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using System.IO;
 using System.Net;
 using System.Text.RegularExpressions;
@@ -13,10 +14,11 @@ namespace NvidiaGpuMonitor
     /// RimTalk, or any other mod. Off by default; the user opts in and sets the
     /// endpoint in mod settings.
     ///
-    /// When enabled and reachable, it reads the loaded model name from the server's
-    /// <c>/v1/models</c> route and estimates the model's VRAM footprint from its
-    /// parameter count. A remote host (endpoint that is not localhost) is detected so
-    /// its VRAM is never attributed to the local GPU.
+    /// When enabled and reachable, it reads the loaded model name(s) from the server's
+    /// <c>/v1/models</c> route. It reports a name-based VRAM ESTIMATE as a fallback only —
+    /// the primary, accurate figure comes from NVML per-process VRAM (see VramBreakdown),
+    /// because a model's real footprint (e.g. Gemma 3n "E2B") can't be inferred from its
+    /// name. LM Studio can also have several models loaded at once, so all of them count.
     ///
     /// Everything runs on a background thread and degrades quietly: any failure leaves
     /// <see cref="Reachable"/> false and the breakdown falls back to a pure-GPU view.
@@ -33,7 +35,7 @@ namespace NvidiaGpuMonitor
         // ── Cached state (guarded by _lock) ──
         private static bool _reachable;
         private static bool _isRemote;
-        private static string _modelName;
+        private static List<string> _models = new List<string>();
         private static float _estimatedVramMb;
         private static string _lastError;
         private static DateTime _lastUpdated = DateTime.MinValue;
@@ -43,7 +45,7 @@ namespace NvidiaGpuMonitor
         /// <summary>Whether the user has opted into LM Studio awareness.</summary>
         internal static bool Enabled => DevToolsMod.Instance?.Settings?.lmStudioEnabled ?? false;
 
-        /// <summary>The configured endpoint, e.g. "http://localhost:1234".</summary>
+        /// <summary>The configured endpoint, e.g. "http://127.0.0.1:1234".</summary>
         internal static string Endpoint =>
             DevToolsMod.Instance?.Settings?.lmStudioEndpoint ?? "http://127.0.0.1:1234";
 
@@ -54,11 +56,27 @@ namespace NvidiaGpuMonitor
         /// so its model runs on another machine's GPU and must not count as local VRAM.</summary>
         internal static bool IsRemote { get { lock (_lock) return _isRemote; } }
 
-        /// <summary>Loaded model name reported by the server, or null.</summary>
-        internal static string ModelName { get { lock (_lock) return _modelName; } }
+        /// <summary>Number of models currently loaded in LM Studio.</summary>
+        internal static int LoadedModelCount { get { lock (_lock) return _models.Count; } }
 
-        /// <summary>Estimated total VRAM (MB) for the loaded model. Zero when disabled,
-        /// remote, unreachable, or the size can't be parsed.</summary>
+        /// <summary>Short display name: the first loaded model, with a "+N more" suffix
+        /// when several are loaded. Null when none.</summary>
+        internal static string ModelName
+        {
+            get
+            {
+                lock (_lock)
+                {
+                    if (_models.Count == 0) return null;
+                    if (_models.Count == 1) return _models[0];
+                    return $"{_models[0]} (+{_models.Count - 1} more)";
+                }
+            }
+        }
+
+        /// <summary>Estimated total VRAM (MB) across ALL loaded models — a rough, name-based
+        /// FALLBACK only (the accurate number is measured per-process; see VramBreakdown).
+        /// Zero when disabled, remote, or unreachable.</summary>
         internal static float EstimatedVramMb { get { lock (_lock) return _estimatedVramMb; } }
 
         internal static string LastError { get { lock (_lock) return _lastError; } }
@@ -113,7 +131,7 @@ namespace NvidiaGpuMonitor
             {
                 _reachable = false;
                 _isRemote = false;
-                _modelName = null;
+                _models = new List<string>();
                 _estimatedVramMb = 0f;
                 _lastError = null;
             }
@@ -123,19 +141,20 @@ namespace NvidiaGpuMonitor
         {
             string endpoint = Endpoint;
             bool remote = IsRemoteEndpoint(endpoint);
-            string model = QueryLoadedModel(endpoint, out string error);
-            bool reachable = model != null;
+            List<string> models = QueryLoadedModels(endpoint, out string error);
+            bool reachable = models != null;
+            if (models == null) models = new List<string>();
 
-            // Attribute VRAM only when the model actually runs on this GPU.
+            // Name-based estimate is a FALLBACK, and only when the model runs on this GPU.
             float vramMb = 0f;
             if (reachable && !remote)
-                vramMb = EstimateModelVramMb(model);
+                foreach (var m in models) vramMb += EstimateModelVramMb(m);
 
             lock (_lock)
             {
                 _isRemote = remote;
                 _reachable = reachable;
-                _modelName = model;
+                _models = models;
                 _estimatedVramMb = vramMb;
                 _lastError = error;
                 _lastUpdated = DateTime.UtcNow;
@@ -143,31 +162,30 @@ namespace NvidiaGpuMonitor
         }
 
         /// <summary>
-        /// GET {endpoint}/v1/models and extract the first model id. Returns null on any
-        /// failure. Uses a short timeout so the background loop never hangs.
+        /// GET {endpoint}/v1/models and extract every loaded model id. Returns null on any
+        /// failure (unreachable), an empty list when reachable but nothing is loaded.
         ///
         /// Windows gotcha: "localhost" frequently resolves to IPv6 (::1) first, but LM Studio
         /// binds to IPv4 (127.0.0.1) only, so a "localhost" endpoint fails to connect. When the
         /// configured host is "localhost" and the request fails, we transparently retry against
         /// 127.0.0.1 so the user doesn't have to know this.
         /// </summary>
-        private static string QueryLoadedModel(string endpoint, out string error)
+        private static List<string> QueryLoadedModels(string endpoint, out string error)
         {
-            string model = TryFetchModel(endpoint, out error);
-            if (model != null) return model;
+            List<string> models = TryFetchModels(endpoint, out error);
+            if (models != null) return models;
 
             string ipv4 = SubstituteLocalhostForIpv4(endpoint);
             if (ipv4 != null)
             {
-                string retryModel = TryFetchModel(ipv4, out string retryError);
-                if (retryModel != null) { error = null; return retryModel; }
-                // Keep the original error unless the retry produced a more specific one.
+                List<string> retry = TryFetchModels(ipv4, out string retryError);
+                if (retry != null) { error = null; return retry; }
                 if (string.IsNullOrEmpty(error)) error = retryError;
             }
             return null;
         }
 
-        private static string TryFetchModel(string endpoint, out string error)
+        private static List<string> TryFetchModels(string endpoint, out string error)
         {
             error = null;
             try
@@ -184,7 +202,7 @@ namespace NvidiaGpuMonitor
                 using (var reader = new StreamReader(stream))
                 {
                     string body = reader.ReadToEnd();
-                    return ExtractFirstModelId(body);
+                    return ExtractAllModelIds(body);
                 }
             }
             catch (WebException wex)
@@ -198,6 +216,21 @@ namespace NvidiaGpuMonitor
             {
                 error = ex.Message;
                 return null;
+            }
+        }
+
+        private static bool IsRemoteEndpoint(string endpoint)
+        {
+            try
+            {
+                var uri = new Uri(endpoint);
+                string host = uri.Host.ToLowerInvariant();
+                return host != "localhost" && host != "127.0.0.1" && host != "::1" && host != "[::1]";
+            }
+            catch
+            {
+                // Unparseable endpoint — treat as local so we don't hide a real usage figure.
+                return false;
             }
         }
 
@@ -222,35 +255,27 @@ namespace NvidiaGpuMonitor
         }
 
         /// <summary>
-        /// Pull the first <c>"id":"..."</c> value out of an OpenAI-style /v1/models
-        /// payload without a JSON library (Core used to bundle Newtonsoft; we don't).
+        /// Pull every <c>"id":"..."</c> value out of an OpenAI-style /v1/models payload
+        /// (LM Studio's /v1/models lists the models currently loaded and ready to serve).
+        /// No JSON library — Core used to bundle Newtonsoft; we don't.
         /// </summary>
-        internal static string ExtractFirstModelId(string json)
+        internal static List<string> ExtractAllModelIds(string json)
         {
-            if (string.IsNullOrEmpty(json)) return null;
-            var m = Regex.Match(json, "\"id\"\\s*:\\s*\"([^\"]+)\"");
-            return m.Success ? m.Groups[1].Value : null;
-        }
-
-        private static bool IsRemoteEndpoint(string endpoint)
-        {
-            try
+            var result = new List<string>();
+            if (string.IsNullOrEmpty(json)) return result;
+            foreach (Match m in Regex.Matches(json, "\"id\"\\s*:\\s*\"([^\"]+)\""))
             {
-                var uri = new Uri(endpoint);
-                string host = uri.Host.ToLowerInvariant();
-                return host != "localhost" && host != "127.0.0.1" && host != "::1" && host != "[::1]";
+                string id = m.Groups[1].Value;
+                if (!string.IsNullOrEmpty(id) && !result.Contains(id)) result.Add(id);
             }
-            catch
-            {
-                // Unparseable endpoint — treat as local so we don't hide a real usage figure.
-                return false;
-            }
+            return result;
         }
 
         /// <summary>
-        /// Estimate a model's VRAM footprint from its parameter count. Assumes a
-        /// Q4_K_M-class quantization (~0.65 GB per billion params) plus ~0.5 GB overhead
-        /// for the KV cache, context, and runtime.
+        /// Rough name-based VRAM estimate (FALLBACK only). Assumes a Q4_K_M-class
+        /// quantization (~0.65 GB per billion params) plus ~0.5 GB overhead. Unreliable for
+        /// MoE / "effective-param" models (e.g. Gemma 3n E2B loads far larger than its "2B"
+        /// name) — which is exactly why the measured per-process figure is preferred.
         /// </summary>
         internal static float EstimateModelVramMb(string modelName)
         {
